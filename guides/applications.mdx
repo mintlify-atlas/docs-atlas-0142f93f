@@ -1,0 +1,179 @@
+---
+title: "Manage Okta applications with the Go SDK"
+description: "Register SAML, OIDC, and SWA applications, list apps, assign users and groups, and manage application lifecycle settings using the Go SDK."
+---
+
+The `ApplicationAPI`, `ApplicationUsersAPI`, and `ApplicationGroupsAPI` give you full control over the applications registered in your Okta org. You can list and retrieve existing apps, create new OIDC or SAML integrations, assign users and groups to apps, and manage app lifecycle states.
+
+## List all applications
+
+`ListApplications` returns all apps in the org as a paginated list. Each item is a `ListApplications200ResponseInner` union type that wraps the concrete app struct for the relevant sign-on mode.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    applicationList, resp, err := client.ApplicationAPI.ListApplications(context.Background()).Execute()
+    if err != nil {
+        fmt.Printf("Error listing applications: %v\n", err)
+    }
+    fmt.Printf("ApplicationList: %+v\n Response: %+v\n\n", applicationList, resp)
+}
+```
+
+## Get an application
+
+Retrieve a single application by its app ID.
+
+```go
+application, resp, err := client.ApplicationAPI.GetApplication(context.Background(), "{appId}").Execute()
+if err != nil {
+    fmt.Printf("Error getting application: %v\n", err)
+}
+fmt.Printf("Application: %+v\n Response: %+v\n\n", application, resp)
+```
+
+## Create an OIDC application
+
+Build an `OpenIdConnectApplication` struct and wrap it in the `ListApplications200ResponseInner` union before passing it to `CreateApplication`. The example below creates a native app with the implicit and authorization code grant types.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    settingClient := okta.NewOpenIdConnectApplicationSettingsClient([]string{"grantTypes"})
+    settingClient.SetClientUri("https://example.com/client")
+    settingClient.SetLogoUri("https://example.com/assets/images/logo-new.png")
+    settingClient.SetResponseTypes([]string{"token", "id_token", "code"})
+    settingClient.SetRedirectUris([]string{
+        "https://example.com/oauth2/callback",
+        "myapp://callback",
+    })
+    settingClient.SetPostLogoutRedirectUris([]string{
+        "https://example.com/postlogout",
+        "myapp://postlogoutcallback",
+    })
+    settingClient.SetGrantTypes([]string{"implicit", "authorization_code"})
+    settingClient.SetApplicationType("native")
+    settingClient.SetTosUri("https://example.com/client/tos")
+    settingClient.SetPolicyUri("https://example.com/client/policy")
+
+    setting := okta.NewOpenIdConnectApplicationSettings()
+    setting.SetOauthClient(*settingClient)
+
+    credClient := okta.NewApplicationCredentialsOAuthClient()
+    credClient.SetTokenEndpointAuthMethod("client_secret_post")
+    credClient.SetClientId("id")
+    credClient.SetAutoKeyRotation(true)
+
+    credentials := okta.NewOAuthApplicationCredentials()
+    credentials.SetOauthClient(*credClient)
+
+    res := okta.OpenIdConnectApplication{}
+    res.SetSettings(*setting)
+    res.SetCredentials(*credentials)
+    res.SetName("oidc_client")
+    res.SetSignOnMode("OPENID_CONNECT")
+    res.SetLabel("My Native App")
+
+    application, resp, err := client.ApplicationAPI.CreateApplication(context.Background()).
+        Application(okta.ListApplications200ResponseInner{OpenIdConnectApplication: &res}).
+        Execute()
+    if err != nil {
+        fmt.Printf("Error creating application: %v\n", err)
+    }
+    fmt.Printf("Application: %+v\n Response: %+v\n\n", application, resp)
+}
+```
+
+## Assign a user to an application
+
+`AssignUserToApplication` creates an app user assignment. The request body can include app-specific profile attributes or credentials for provisioning-enabled apps.
+
+```go
+appUser := okta.NewAppUser()
+appUser.SetId("{userId}")
+
+assignedUser, resp, err := client.ApplicationUsersAPI.AssignUserToApplication(context.Background(), "{appId}").
+    AppUser(*appUser).
+    Execute()
+if err != nil {
+    fmt.Printf("Error assigning user to application: %v\n", err)
+}
+fmt.Printf("Assigned user: %+v\n Response: %+v\n\n", assignedUser, resp)
+```
+
+## Assign a group to an application
+
+Assigning a group to an app propagates the assignment to all current members of that group. Each member gets an app assignment with a `GROUP` scope.
+
+```go
+assignment, resp, err := client.ApplicationGroupsAPI.AssignGroupToApplication(
+    context.Background(), "{appId}", "{groupId}",
+).Execute()
+if err != nil {
+    fmt.Printf("Error assigning group to application: %v\n", err)
+}
+fmt.Printf("Assignment: %+v\n Response: %+v\n\n", assignment, resp)
+```
+
+## Activate and deactivate an application
+
+Applications can be activated or deactivated without deleting them. Deactivating an app triggers a full reconciliation that removes the assignment from all users.
+
+<CodeGroup>
+
+```go Activate
+resp, err := client.ApplicationAPI.ActivateApplication(context.Background(), "{appId}").Execute()
+if err != nil {
+    fmt.Printf("Error activating application: %v\n", err)
+}
+```
+
+```go Deactivate
+resp, err := client.ApplicationAPI.DeactivateApplication(context.Background(), "{appId}").Execute()
+if err != nil {
+    fmt.Printf("Error deactivating application: %v\n", err)
+}
+```
+
+</CodeGroup>
+
+<Note>
+Only inactive applications can be permanently deleted. Call `DeactivateApplication` before calling `DeleteApplication`.
+</Note>
+
+## Delete an application
+
+```go
+resp, err := client.ApplicationAPI.DeleteApplication(context.Background(), "{appId}").Execute()
+if err != nil {
+    fmt.Printf("Error deleting application: %v\n", err)
+}
+```

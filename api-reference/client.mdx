@@ -1,0 +1,568 @@
+---
+title: "APIClient — Okta Go SDK client reference"
+description: "Reference for okta.NewAPIClient() and the APIClient struct. Lists all available API service properties and how to initialize the client."
+---
+
+`APIClient` is the central struct of the Okta Go SDK. You construct one instance per application by passing a `*Configuration` to `NewAPIClient`, then call methods through its API service properties. In most applications there should be a single shared `APIClient`. All service fields are interfaces, which makes it straightforward to substitute test doubles in unit tests.
+
+## Constants
+
+```go
+const VERSION = "6.1.6"
+```
+
+`VERSION` is the current SDK release string. It is embedded in the default `User-Agent` header sent with every request.
+
+## Constructor
+
+```go
+func NewAPIClient(cfg *Configuration) *APIClient
+```
+
+`NewAPIClient` allocates and initializes an `APIClient` from the supplied `*Configuration`. You must call `NewConfiguration` (or build a `Configuration` manually) before calling `NewAPIClient`.
+
+```go
+import (
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    cfg, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("configuration error: %v\n", err)
+        return
+    }
+    client := okta.NewAPIClient(cfg)
+    _ = client
+}
+```
+
+## API service properties
+
+Every property on `APIClient` is an API service interface. Call the service methods directly on the returned client — there is no separate service lookup step.
+
+```go
+user, resp, err := client.UserAPI.GetUser(ctx, "{userId}").Execute()
+```
+
+The services are grouped below by functional area.
+
+---
+
+### Identity and directory
+
+<ResponseField name="UserAPI" type="UserAPI">
+  Manage user lifecycle: create, read, update, deactivate, delete, and reactivate users. Also covers activating and suspending accounts and resetting passwords.
+</ResponseField>
+
+<ResponseField name="UserLifecycleAPI" type="UserLifecycleAPI">
+  Dedicated lifecycle transitions for users, including activation, deactivation, suspension, reactivation, and unlock operations.
+</ResponseField>
+
+<ResponseField name="UserCredAPI" type="UserCredAPI">
+  Manage user credentials, including setting and expiring passwords and resetting credential state.
+</ResponseField>
+
+<ResponseField name="UserAuthenticatorEnrollmentsAPI" type="UserAuthenticatorEnrollmentsAPI">
+  List and delete authenticator enrollments for individual users.
+</ResponseField>
+
+<ResponseField name="UserFactorAPI" type="UserFactorAPI">
+  Enroll, activate, verify, and delete MFA factors on user accounts.
+</ResponseField>
+
+<ResponseField name="UserGrantAPI" type="UserGrantAPI">
+  List and revoke OAuth 2.0 grants that have been issued to users.
+</ResponseField>
+
+<ResponseField name="UserLinkedObjectAPI" type="UserLinkedObjectAPI">
+  Get and set linked-object relationships between users (for example, manager–subordinate pairs).
+</ResponseField>
+
+<ResponseField name="UserOAuthAPI" type="UserOAuthAPI">
+  List and revoke OAuth 2.0 tokens issued to users.
+</ResponseField>
+
+<ResponseField name="UserResourcesAPI" type="UserResourcesAPI">
+  Retrieve application, group, and role assignments related to a user.
+</ResponseField>
+
+<ResponseField name="UserRiskAPI" type="UserRiskAPI">
+  Access and manage risk signals associated with user accounts.
+</ResponseField>
+
+<ResponseField name="UserSessionsAPI" type="UserSessionsAPI">
+  Clear and list user sessions.
+</ResponseField>
+
+<ResponseField name="UserClassificationAPI" type="UserClassificationAPI">
+  Manage the classification (realm membership) of users.
+</ResponseField>
+
+<ResponseField name="UserTypeAPI" type="UserTypeAPI">
+  Create, update, and delete user types that define custom profile schemas.
+</ResponseField>
+
+<ResponseField name="GroupAPI" type="GroupAPI">
+  Manage groups: create, update, delete, list members, and assign applications.
+</ResponseField>
+
+<ResponseField name="GroupOwnerAPI" type="GroupOwnerAPI">
+  Assign and remove group owners.
+</ResponseField>
+
+<ResponseField name="GroupPushMappingAPI" type="GroupPushMappingAPI">
+  Configure and manage group push mappings that sync Okta groups to downstream apps.
+</ResponseField>
+
+<ResponseField name="GroupRuleAPI" type="GroupRuleAPI">
+  Create and manage rules that dynamically assign users to groups.
+</ResponseField>
+
+<ResponseField name="LinkedObjectAPI" type="LinkedObjectAPI">
+  Define and manage linked-object type definitions at the org level.
+</ResponseField>
+
+<ResponseField name="SchemaAPI" type="SchemaAPI">
+  Manage user, group, and application profile schemas.
+</ResponseField>
+
+<ResponseField name="ProfileMappingAPI" type="ProfileMappingAPI">
+  Configure attribute mappings between Okta and application user profiles.
+</ResponseField>
+
+<ResponseField name="IdentitySourceAPI" type="IdentitySourceAPI">
+  Interact with identity source sessions for bulk import and reconciliation.
+</ResponseField>
+
+<ResponseField name="DirectoriesIntegrationAPI" type="DirectoriesIntegrationAPI">
+  Manage Active Directory and LDAP integrations.
+</ResponseField>
+
+<ResponseField name="RealmAPI" type="RealmAPI">
+  Create and manage realms that partition users into isolated identity domains.
+</ResponseField>
+
+<ResponseField name="RealmAssignmentAPI" type="RealmAssignmentAPI">
+  Manage rules that assign users to realms.
+</ResponseField>
+
+---
+
+### Applications
+
+<ResponseField name="ApplicationAPI" type="ApplicationAPI">
+  Core application management: create, read, update, delete, activate, and deactivate applications.
+</ResponseField>
+
+<ResponseField name="ApplicationConnectionsAPI" type="ApplicationConnectionsAPI">
+  Manage provisioning connections (for example, SCIM connections) for an application.
+</ResponseField>
+
+<ResponseField name="ApplicationCrossAppAccessConnectionsAPI" type="ApplicationCrossAppAccessConnectionsAPI">
+  Manage cross-application access connections for app-to-app trust relationships.
+</ResponseField>
+
+<ResponseField name="ApplicationFeaturesAPI" type="ApplicationFeaturesAPI">
+  Enable and configure features such as PUSH_NEW_USERS on an application.
+</ResponseField>
+
+<ResponseField name="ApplicationGrantsAPI" type="ApplicationGrantsAPI">
+  List and revoke scope grants for applications acting on behalf of users.
+</ResponseField>
+
+<ResponseField name="ApplicationGroupsAPI" type="ApplicationGroupsAPI">
+  Assign groups to applications and manage group-level application access.
+</ResponseField>
+
+<ResponseField name="ApplicationInterclientTrustMappingsAPI" type="ApplicationInterclientTrustMappingsAPI">
+  Configure inter-client trust mappings for application-to-application trust.
+</ResponseField>
+
+<ResponseField name="ApplicationLogosAPI" type="ApplicationLogosAPI">
+  Upload and manage logo images for applications.
+</ResponseField>
+
+<ResponseField name="ApplicationPoliciesAPI" type="ApplicationPoliciesAPI">
+  Assign policies to applications, for example sign-on policies.
+</ResponseField>
+
+<ResponseField name="ApplicationSSOAPI" type="ApplicationSSOAPI">
+  Manage SSO settings and credentials for applications.
+</ResponseField>
+
+<ResponseField name="ApplicationSSOCredentialKeyAPI" type="ApplicationSSOCredentialKeyAPI">
+  Manage SSO credential keys (X.509 certificates) used for SAML signing.
+</ResponseField>
+
+<ResponseField name="ApplicationSSOFederatedClaimsAPI" type="ApplicationSSOFederatedClaimsAPI">
+  Manage federated claim configurations for SSO applications.
+</ResponseField>
+
+<ResponseField name="ApplicationSSOPublicKeysAPI" type="ApplicationSSOPublicKeysAPI">
+  Retrieve public keys used to verify SSO assertions.
+</ResponseField>
+
+<ResponseField name="ApplicationTokensAPI" type="ApplicationTokensAPI">
+  List and revoke OAuth 2.0 refresh tokens issued to applications.
+</ResponseField>
+
+<ResponseField name="ApplicationUsersAPI" type="ApplicationUsersAPI">
+  Assign and remove users from applications and manage their application profile data.
+</ResponseField>
+
+<ResponseField name="OktaApplicationSettingsAPI" type="OktaApplicationSettingsAPI">
+  Read and update Okta-specific settings on applications.
+</ResponseField>
+
+<ResponseField name="ApiServiceIntegrationsAPI" type="ApiServiceIntegrationsAPI">
+  Manage API service integrations that connect Okta to third-party API providers.
+</ResponseField>
+
+---
+
+### Authentication and authorization
+
+<ResponseField name="AuthenticatorAPI" type="AuthenticatorAPI">
+  Manage authenticator configurations (for example, TOTP, WebAuthn, email) available for enrollment.
+</ResponseField>
+
+<ResponseField name="AuthorizationServerAPI" type="AuthorizationServerAPI">
+  Create and manage custom authorization servers.
+</ResponseField>
+
+<ResponseField name="AuthorizationServerAssocAPI" type="AuthorizationServerAssocAPI">
+  Manage trusted authorization server associations.
+</ResponseField>
+
+<ResponseField name="AuthorizationServerClaimsAPI" type="AuthorizationServerClaimsAPI">
+  Manage claims on authorization servers.
+</ResponseField>
+
+<ResponseField name="AuthorizationServerClientsAPI" type="AuthorizationServerClientsAPI">
+  List OAuth 2.0 clients registered against a custom authorization server.
+</ResponseField>
+
+<ResponseField name="AuthorizationServerKeysAPI" type="AuthorizationServerKeysAPI">
+  Manage signing keys for custom authorization servers.
+</ResponseField>
+
+<ResponseField name="AuthorizationServerPoliciesAPI" type="AuthorizationServerPoliciesAPI">
+  Manage access policies on custom authorization servers.
+</ResponseField>
+
+<ResponseField name="AuthorizationServerRulesAPI" type="AuthorizationServerRulesAPI">
+  Manage policy rules on custom authorization server policies.
+</ResponseField>
+
+<ResponseField name="AuthorizationServerScopesAPI" type="AuthorizationServerScopesAPI">
+  Define and manage OAuth 2.0 scopes on custom authorization servers.
+</ResponseField>
+
+<ResponseField name="IdentityProviderAPI" type="IdentityProviderAPI">
+  Configure and manage external identity providers (social, SAML, OIDC).
+</ResponseField>
+
+<ResponseField name="IdentityProviderKeysAPI" type="IdentityProviderKeysAPI">
+  Manage the key store used by identity providers for signing and encryption.
+</ResponseField>
+
+<ResponseField name="IdentityProviderSigningKeysAPI" type="IdentityProviderSigningKeysAPI">
+  Manage signing key credentials for a specific identity provider.
+</ResponseField>
+
+<ResponseField name="IdentityProviderUsersAPI" type="IdentityProviderUsersAPI">
+  Link Okta users to external identity provider identities.
+</ResponseField>
+
+<ResponseField name="SessionAPI" type="SessionAPI">
+  Create and manage Okta sessions, including refresh and revocation.
+</ResponseField>
+
+<ResponseField name="WebAuthnPreregistrationAPI" type="WebAuthnPreregistrationAPI">
+  Preregister WebAuthn credentials for users before they complete enrollment.
+</ResponseField>
+
+<ResponseField name="OAuth2ResourceServerCredentialsKeysAPI" type="OAuth2ResourceServerCredentialsKeysAPI">
+  Manage credential keys for OAuth 2.0 resource servers.
+</ResponseField>
+
+---
+
+### Roles and access control
+
+<ResponseField name="RoleAssignmentAUserAPI" type="RoleAssignmentAUserAPI">
+  Assign and unassign standard roles to individual users.
+</ResponseField>
+
+<ResponseField name="RoleAssignmentBGroupAPI" type="RoleAssignmentBGroupAPI">
+  Assign and unassign standard roles to groups.
+</ResponseField>
+
+<ResponseField name="RoleAssignmentClientAPI" type="RoleAssignmentClientAPI">
+  Assign and unassign roles to OAuth 2.0 clients (service apps).
+</ResponseField>
+
+<ResponseField name="RoleBTargetAdminAPI" type="RoleBTargetAdminAPI">
+  Manage admin role targets for users (the resources an admin can manage).
+</ResponseField>
+
+<ResponseField name="RoleBTargetBGroupAPI" type="RoleBTargetBGroupAPI">
+  Manage group-level role targets for groups.
+</ResponseField>
+
+<ResponseField name="RoleBTargetClientAPI" type="RoleBTargetClientAPI">
+  Manage client-level role targets for OAuth clients.
+</ResponseField>
+
+<ResponseField name="RoleCResourceSetAPI" type="RoleCResourceSetAPI">
+  Create and manage resource sets used to scope custom admin roles.
+</ResponseField>
+
+<ResponseField name="RoleCResourceSetResourceAPI" type="RoleCResourceSetResourceAPI">
+  Add and remove resources from resource sets.
+</ResponseField>
+
+<ResponseField name="RoleDResourceSetBindingAPI" type="RoleDResourceSetBindingAPI">
+  Bind custom roles to resource sets.
+</ResponseField>
+
+<ResponseField name="RoleDResourceSetBindingMemberAPI" type="RoleDResourceSetBindingMemberAPI">
+  Manage members of a resource set binding.
+</ResponseField>
+
+<ResponseField name="RoleECustomAPI" type="RoleECustomAPI">
+  Create, update, and delete custom admin roles.
+</ResponseField>
+
+<ResponseField name="RoleECustomPermissionAPI" type="RoleECustomPermissionAPI">
+  Manage the permissions granted to custom admin roles.
+</ResponseField>
+
+<ResponseField name="GovernanceBundleAPI" type="GovernanceBundleAPI">
+  Manage governance bundles that group entitlements for access certification and access requests.
+</ResponseField>
+
+<ResponseField name="SubscriptionAPI" type="SubscriptionAPI">
+  Manage role-based notification subscriptions for Okta admins.
+</ResponseField>
+
+---
+
+### Security and threat protection
+
+<ResponseField name="PolicyAPI" type="PolicyAPI">
+  Create and manage Okta policies (sign-on, password, enrollment, MFA) and their rules.
+</ResponseField>
+
+<ResponseField name="NetworkZoneAPI" type="NetworkZoneAPI">
+  Define IP network zones used in policies and sign-on rules.
+</ResponseField>
+
+<ResponseField name="BehaviorAPI" type="BehaviorAPI">
+  Configure behavior detection rules used in adaptive sign-on policies.
+</ResponseField>
+
+<ResponseField name="AttackProtectionAPI" type="AttackProtectionAPI">
+  Configure brute-force, disallowed-password, and user-lockout protection settings.
+</ResponseField>
+
+<ResponseField name="BotProtectionAPI" type="BotProtectionAPI">
+  Configure bot detection settings for your org.
+</ResponseField>
+
+<ResponseField name="ThreatInsightAPI" type="ThreatInsightAPI">
+  Configure Okta ThreatInsight settings that protect against credential-based attacks.
+</ResponseField>
+
+<ResponseField name="TrustedOriginAPI" type="TrustedOriginAPI">
+  Manage trusted origins for cross-origin requests (CORS) and redirects.
+</ResponseField>
+
+<ResponseField name="DeviceAssuranceAPI" type="DeviceAssuranceAPI">
+  Create and manage device assurance policies that require devices to meet security requirements.
+</ResponseField>
+
+<ResponseField name="DevicePostureCheckAPI" type="DevicePostureCheckAPI">
+  Manage device posture checks for continuous device evaluation.
+</ResponseField>
+
+<ResponseField name="CAPTCHAAPI" type="CAPTCHAAPI">
+  Configure CAPTCHA providers integrated with Okta sign-in flows.
+</ResponseField>
+
+<ResponseField name="SSFReceiverAPI" type="SSFReceiverAPI">
+  Configure Shared Signals Framework (SSF) receivers that consume security event streams.
+</ResponseField>
+
+<ResponseField name="SSFSecurityEventTokenAPI" type="SSFSecurityEventTokenAPI">
+  Publish and retrieve Security Event Tokens (SET) over SSF.
+</ResponseField>
+
+<ResponseField name="SSFTransmitterAPI" type="SSFTransmitterAPI">
+  Configure SSF transmitters that publish security event streams.
+</ResponseField>
+
+<ResponseField name="PrincipalRateLimitAPI" type="PrincipalRateLimitAPI">
+  Manage per-principal rate limit overrides.
+</ResponseField>
+
+<ResponseField name="RateLimitSettingsAPI" type="RateLimitSettingsAPI">
+  Read and update org-wide rate limit settings and warning thresholds.
+</ResponseField>
+
+---
+
+### Platform and org settings
+
+<ResponseField name="SystemLogAPI" type="SystemLogAPI">
+  Query the Okta System Log for audit and event records.
+</ResponseField>
+
+<ResponseField name="LogStreamAPI" type="LogStreamAPI">
+  Configure log streaming destinations (for example, AWS EventBridge, Splunk Cloud).
+</ResponseField>
+
+<ResponseField name="EventHookAPI" type="EventHookAPI">
+  Register and manage event hooks that deliver real-time event notifications to an endpoint.
+</ResponseField>
+
+<ResponseField name="InlineHookAPI" type="InlineHookAPI">
+  Register and manage inline hooks that extend Okta flows with external logic.
+</ResponseField>
+
+<ResponseField name="HookKeyAPI" type="HookKeyAPI">
+  Manage hook keys used to sign inline hook requests.
+</ResponseField>
+
+<ResponseField name="OrgSettingAdminAPI" type="OrgSettingAdminAPI">
+  Read and update general administrator settings for the org.
+</ResponseField>
+
+<ResponseField name="OrgSettingCommunicationAPI" type="OrgSettingCommunicationAPI">
+  Configure opt-in communication settings for the org.
+</ResponseField>
+
+<ResponseField name="OrgSettingContactAPI" type="OrgSettingContactAPI">
+  Manage technical and billing contact information for the org.
+</ResponseField>
+
+<ResponseField name="OrgSettingCustomizationAPI" type="OrgSettingCustomizationAPI">
+  Configure org-level customizations such as footer links and custom help URLs.
+</ResponseField>
+
+<ResponseField name="OrgSettingGeneralAPI" type="OrgSettingGeneralAPI">
+  Read and update general org settings like org name and end-user support.
+</ResponseField>
+
+<ResponseField name="OrgSettingMetadataAPI" type="OrgSettingMetadataAPI">
+  Retrieve org metadata including the well-known Okta organization metadata.
+</ResponseField>
+
+<ResponseField name="OrgSettingSupportAPI" type="OrgSettingSupportAPI">
+  Grant and revoke Okta support access to the org.
+</ResponseField>
+
+<ResponseField name="OrgCreatorAPI" type="OrgCreatorAPI">
+  APIs for creating child orgs (available to Okta partners and customers with org creation permissions).
+</ResponseField>
+
+<ResponseField name="OktaPersonalSettingsAPI" type="OktaPersonalSettingsAPI">
+  Manage personal (end-user) settings exposed by the Okta Admin API.
+</ResponseField>
+
+<ResponseField name="FeatureAPI" type="FeatureAPI">
+  List and toggle early-access and beta features in the org.
+</ResponseField>
+
+<ResponseField name="AgentPoolsAPI" type="AgentPoolsAPI">
+  Manage Okta agent pools used for on-premises integrations (AD, LDAP).
+</ResponseField>
+
+<ResponseField name="ApiTokenAPI" type="ApiTokenAPI">
+  Create, list, and revoke API tokens for the org.
+</ResponseField>
+
+<ResponseField name="ServiceAccountAPI" type="ServiceAccountAPI">
+  Manage Okta service accounts used for OAuth 2.0 machine-to-machine access.
+</ResponseField>
+
+<ResponseField name="DisasterRecoveryAPI" type="DisasterRecoveryAPI">
+  Trigger and monitor org failover and failback operations for disaster recovery.
+
+  <Note>
+    This service uses a different base URL (`https://drapp.{yourOrgSubDomain}.okta.com`). The SDK routes these requests automatically.
+  </Note>
+</ResponseField>
+
+---
+
+### Branding and customization
+
+<ResponseField name="BrandsAPI" type="BrandsAPI">
+  Manage brand configurations that control the visual identity of Okta-hosted pages.
+</ResponseField>
+
+<ResponseField name="ThemesAPI" type="ThemesAPI">
+  Manage themes within a brand, including logos, favicons, and color settings.
+</ResponseField>
+
+<ResponseField name="CustomDomainAPI" type="CustomDomainAPI">
+  Configure custom domains for Okta-hosted sign-in and self-service pages.
+</ResponseField>
+
+<ResponseField name="CustomPagesAPI" type="CustomPagesAPI">
+  Manage custom sign-in page configurations.
+</ResponseField>
+
+<ResponseField name="AssociatedDomainCustomizationsAPI" type="AssociatedDomainCustomizationsAPI">
+  Configure per-domain customizations for orgs with multiple associated domains.
+</ResponseField>
+
+<ResponseField name="EmailCustomizationAPI" type="EmailCustomizationAPI">
+  Customize email templates sent by Okta for enrollment, activation, and other flows.
+</ResponseField>
+
+<ResponseField name="EmailDomainAPI" type="EmailDomainAPI">
+  Manage custom email sender domains for org-level email customization.
+</ResponseField>
+
+<ResponseField name="EmailServerAPI" type="EmailServerAPI">
+  Configure custom SMTP servers to relay Okta-sent emails.
+</ResponseField>
+
+<ResponseField name="CustomTelephonyProviderAPI" type="CustomTelephonyProviderAPI">
+  Configure custom telephony providers for SMS and voice delivery.
+</ResponseField>
+
+<ResponseField name="CustomTemplatesAPI" type="CustomTemplatesAPI">
+  Manage SMS message templates used in authentication flows.
+</ResponseField>
+
+<ResponseField name="TemplateAPI" type="TemplateAPI">
+  Manage SMS templates (legacy endpoint alongside `CustomTemplatesAPI`).
+</ResponseField>
+
+<ResponseField name="PushProviderAPI" type="PushProviderAPI">
+  Configure push notification providers (APNs, FCM) used by Okta Verify.
+</ResponseField>
+
+<ResponseField name="UISchemaAPI" type="UISchemaAPI">
+  Define and manage UI schemas that control enrollment form layouts.
+</ResponseField>
+
+---
+
+### Devices
+
+<ResponseField name="DeviceAPI" type="DeviceAPI">
+  List and manage device records enrolled in Okta.
+</ResponseField>
+
+<ResponseField name="DeviceIntegrationsAPI" type="DeviceIntegrationsAPI">
+  Manage MDM/EDR integrations used for device compliance evaluation.
+</ResponseField>

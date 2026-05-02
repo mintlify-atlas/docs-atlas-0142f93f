@@ -1,0 +1,509 @@
+---
+title: "Role assignment APIs for users, groups, and clients"
+description: "Reference for role assignment in the Okta Go SDK: assign standard and custom roles to users, groups, and OAuth clients, and manage resource sets."
+---
+
+Okta provides several role-related APIs to manage administrative access. Standard roles (such as `SUPER_ADMIN` or `ORG_ADMIN`) grant broad administrative privileges and can be assigned directly to users or groups. Custom roles offer fine-grained control through a combination of a custom role definition, a resource set that scopes which resources the role applies to, and a binding that connects members (users or groups) to both. The SDK exposes these capabilities through four focused API interfaces.
+
+## Access the APIs
+
+```go
+client, err := okta.NewClient(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+userRoleAPI  := client.RoleAssignmentAUserAPI
+groupRoleAPI := client.RoleAssignmentBGroupAPI
+customRoleAPI    := client.RoleECustomAPI
+resourceSetAPI   := client.RoleCResourceSetAPI
+bindingAPI       := client.RoleDResourceSetBindingAPI
+```
+
+---
+
+## RoleAssignmentAUserAPI — user role assignments
+
+This API manages standard and custom role assignments for individual users.
+
+### ListAssignedRolesForUser
+
+Lists all roles assigned to a user.
+
+```go
+func (a *RoleAssignmentAUserAPIService) ListAssignedRolesForUser(ctx context.Context, userId string) ApiListAssignedRolesForUserRequest
+func (a *RoleAssignmentAUserAPIService) ListAssignedRolesForUserExecute(r ApiListAssignedRolesForUserRequest) ([]ListGroupAssignedRoles200ResponseInner, *APIResponse, error)
+```
+
+<ParamField path="path.userId" type="string" required>
+  ID of an existing Okta user.
+</ParamField>
+
+<ResponseField name="[]ListGroupAssignedRoles200ResponseInner" type="object[]">
+  A list of role assignment objects. Each object represents a standard or custom role assignment.
+</ResponseField>
+
+### AssignRoleToUser
+
+Assigns a standard role to a user. To assign a custom role, create a resource set binding instead using `RoleDResourceSetBindingAPI.CreateResourceSetBinding`.
+
+```go
+func (a *RoleAssignmentAUserAPIService) AssignRoleToUser(ctx context.Context, userId string) ApiAssignRoleToUserRequest
+func (a *RoleAssignmentAUserAPIService) AssignRoleToUserExecute(r ApiAssignRoleToUserRequest) (*AssignRoleToUser201Response, *APIResponse, error)
+```
+
+<ParamField path="path.userId" type="string" required>
+  ID of an existing Okta user.
+</ParamField>
+
+<ParamField path="body.AssignRoleRequest" type="object" required>
+  The role assignment request body. For standard roles, set `type` to the role type string (for example, `ORG_ADMIN`). For custom roles, set `type` to `CUSTOM` and provide `role` and `resource-set` identifiers.
+</ParamField>
+
+<ParamField path="query.DisableNotifications" type="boolean">
+  When `true`, grants the user third-party admin status.
+</ParamField>
+
+<ResponseField name="*AssignRoleToUser201Response" type="object">
+  The created role assignment.
+</ResponseField>
+
+### Example: assign a standard role to a user
+
+```go
+req := okta.AssignRoleToUserRequest{
+    Type: okta.PtrString("ORG_ADMIN"),
+}
+
+assignment, resp, err := client.RoleAssignmentAUserAPI.
+    AssignRoleToUser(ctx, "00u1a2b3c4d5e6f7g8h9").
+    AssignRoleRequest(req).
+    Execute()
+if err != nil {
+    log.Fatalf("AssignRoleToUser error: %v", err)
+}
+fmt.Printf("Assigned role id: %s\n", assignment.IamRoleAssignmentType.GetId())
+_ = resp
+```
+
+### GetUserAssignedRole
+
+Retrieves a specific role assignment for a user. The `roleAssignmentId` is the unique identifier for either a standard role assignment or a custom role resource set binding.
+
+```go
+func (a *RoleAssignmentAUserAPIService) GetUserAssignedRole(ctx context.Context, userId string, roleAssignmentId string) ApiGetUserAssignedRoleRequest
+func (a *RoleAssignmentAUserAPIService) GetUserAssignedRoleExecute(r ApiGetUserAssignedRoleRequest) (*AssignRoleToGroup200Response, *APIResponse, error)
+```
+
+<ParamField path="path.userId" type="string" required>
+  ID of an existing Okta user.
+</ParamField>
+
+<ParamField path="path.roleAssignmentId" type="string" required>
+  The `id` of the role assignment.
+</ParamField>
+
+### UnassignRoleFromUser
+
+Removes a role assignment from a user.
+
+```go
+func (a *RoleAssignmentAUserAPIService) UnassignRoleFromUser(ctx context.Context, userId string, roleAssignmentId string) ApiUnassignRoleFromUserRequest
+func (a *RoleAssignmentAUserAPIService) UnassignRoleFromUserExecute(r ApiUnassignRoleFromUserRequest) (*APIResponse, error)
+```
+
+<ParamField path="path.userId" type="string" required>
+  ID of an existing Okta user.
+</ParamField>
+
+<ParamField path="path.roleAssignmentId" type="string" required>
+  The `id` of the role assignment to remove.
+</ParamField>
+
+### ListUsersWithRoleAssignments
+
+Lists all users who have at least one role assignment.
+
+```go
+func (a *RoleAssignmentAUserAPIService) ListUsersWithRoleAssignments(ctx context.Context) ApiListUsersWithRoleAssignmentsRequest
+func (a *RoleAssignmentAUserAPIService) ListUsersWithRoleAssignmentsExecute(r ApiListUsersWithRoleAssignmentsRequest) (*RoleAssignedUsers, *APIResponse, error)
+```
+
+<ResponseField name="*RoleAssignedUsers" type="object">
+  Paginated list of users with role assignments.
+</ResponseField>
+
+---
+
+## RoleAssignmentBGroupAPI — group role assignments
+
+This API manages role assignments for Okta groups. Assigning a role to a group grants that role to all members of the group.
+
+### ListGroupAssignedRoles
+
+Lists all roles assigned to a group.
+
+```go
+func (a *RoleAssignmentBGroupAPIService) ListGroupAssignedRoles(ctx context.Context, groupId string) ApiListGroupAssignedRolesRequest
+func (a *RoleAssignmentBGroupAPIService) ListGroupAssignedRolesExecute(r ApiListGroupAssignedRolesRequest) ([]ListGroupAssignedRoles200ResponseInner, *APIResponse, error)
+```
+
+<ParamField path="path.groupId" type="string" required>
+  The `id` of the group.
+</ParamField>
+
+<ResponseField name="[]ListGroupAssignedRoles200ResponseInner" type="object[]">
+  A list of role assignment objects for the group.
+</ResponseField>
+
+### AssignRoleToGroup
+
+Assigns a standard role to a group. To assign a custom role, use `RoleDResourceSetBindingAPI.CreateResourceSetBinding`.
+
+```go
+func (a *RoleAssignmentBGroupAPIService) AssignRoleToGroup(ctx context.Context, groupId string) ApiAssignRoleToGroupRequest
+func (a *RoleAssignmentBGroupAPIService) AssignRoleToGroupExecute(r ApiAssignRoleToGroupRequest) (*AssignRoleToGroup200Response, *APIResponse, error)
+```
+
+<ParamField path="path.groupId" type="string" required>
+  The `id` of the group.
+</ParamField>
+
+<ParamField path="body.AssignRoleRequest" type="object" required>
+  The role assignment request body with `type` set to the desired standard role type.
+</ParamField>
+
+<ParamField path="query.DisableNotifications" type="boolean">
+  When `true`, grants the group third-party admin status.
+</ParamField>
+
+<ResponseField name="*AssignRoleToGroup200Response" type="object">
+  The created role assignment.
+</ResponseField>
+
+### GetGroupAssignedRole
+
+Retrieves a specific role assignment for a group.
+
+```go
+func (a *RoleAssignmentBGroupAPIService) GetGroupAssignedRole(ctx context.Context, groupId string, roleAssignmentId string) ApiGetGroupAssignedRoleRequest
+func (a *RoleAssignmentBGroupAPIService) GetGroupAssignedRoleExecute(r ApiGetGroupAssignedRoleRequest) (*AssignRoleToGroup200Response, *APIResponse, error)
+```
+
+<ParamField path="path.groupId" type="string" required>
+  The `id` of the group.
+</ParamField>
+
+<ParamField path="path.roleAssignmentId" type="string" required>
+  The `id` of the role assignment.
+</ParamField>
+
+### UnassignRoleFromGroup
+
+Removes a role assignment from a group.
+
+```go
+func (a *RoleAssignmentBGroupAPIService) UnassignRoleFromGroup(ctx context.Context, groupId string, roleAssignmentId string) ApiUnassignRoleFromGroupRequest
+func (a *RoleAssignmentBGroupAPIService) UnassignRoleFromGroupExecute(r ApiUnassignRoleFromGroupRequest) (*APIResponse, error)
+```
+
+<ParamField path="path.groupId" type="string" required>
+  The `id` of the group.
+</ParamField>
+
+<ParamField path="path.roleAssignmentId" type="string" required>
+  The `id` of the role assignment to remove.
+</ParamField>
+
+---
+
+## RoleECustomAPI — custom role management
+
+Custom roles let you define granular administrative permissions that you can combine with resource sets to scope exactly what an admin can manage. This API manages the lifecycle of custom role definitions.
+
+### ListRoles
+
+Lists all custom roles with pagination support.
+
+```go
+func (a *RoleECustomAPIService) ListRoles(ctx context.Context) ApiListRolesRequest
+func (a *RoleECustomAPIService) ListRolesExecute(r ApiListRolesRequest) (*IamRoles, *APIResponse, error)
+```
+
+<ResponseField name="*IamRoles" type="object">
+  A paginated collection of custom role objects including a `roles` array and `_links` for pagination.
+</ResponseField>
+
+### CreateRole
+
+Creates a new custom role.
+
+```go
+func (a *RoleECustomAPIService) CreateRole(ctx context.Context) ApiCreateRoleRequest
+func (a *RoleECustomAPIService) CreateRoleExecute(r ApiCreateRoleRequest) (*IamRole, *APIResponse, error)
+```
+
+<ParamField path="body.Instance" type="object" required>
+  A `CreateIamRoleRequest` with `label` (required) and `description` fields.
+</ParamField>
+
+<ResponseField name="*IamRole" type="object">
+  The created custom role including its generated `id`.
+</ResponseField>
+
+### Example: create a custom role
+
+```go
+req := okta.CreateIamRoleRequest{
+    Label:       "Helpdesk Admin",
+    Description: okta.PtrString("Can manage user profiles and passwords"),
+}
+
+role, resp, err := client.RoleECustomAPI.
+    CreateRole(ctx).
+    Instance(req).
+    Execute()
+if err != nil {
+    log.Fatalf("CreateRole error: %v", err)
+}
+fmt.Printf("Custom role id: %s\n", role.GetId())
+_ = resp
+```
+
+### GetRole
+
+Retrieves a custom role by its `id` or `label`.
+
+```go
+func (a *RoleECustomAPIService) GetRole(ctx context.Context, roleIdOrLabel string) ApiGetRoleRequest
+func (a *RoleECustomAPIService) GetRoleExecute(r ApiGetRoleRequest) (*IamRole, *APIResponse, error)
+```
+
+<ParamField path="path.roleIdOrLabel" type="string" required>
+  The `id` or `label` of the custom role.
+</ParamField>
+
+<ResponseField name="*IamRole" type="object">
+  The custom role object.
+</ResponseField>
+
+### ReplaceRole
+
+Replaces the `label` and `description` of a custom role.
+
+```go
+func (a *RoleECustomAPIService) ReplaceRole(ctx context.Context, roleIdOrLabel string) ApiReplaceRoleRequest
+func (a *RoleECustomAPIService) ReplaceRoleExecute(r ApiReplaceRoleRequest) (*IamRole, *APIResponse, error)
+```
+
+<ParamField path="path.roleIdOrLabel" type="string" required>
+  The `id` or `label` of the custom role to update.
+</ParamField>
+
+<ResponseField name="*IamRole" type="object">
+  The updated custom role object.
+</ResponseField>
+
+### DeleteRole
+
+Permanently deletes a custom role by its `id` or `label`.
+
+```go
+func (a *RoleECustomAPIService) DeleteRole(ctx context.Context, roleIdOrLabel string) ApiDeleteRoleRequest
+func (a *RoleECustomAPIService) DeleteRoleExecute(r ApiDeleteRoleRequest) (*APIResponse, error)
+```
+
+<ParamField path="path.roleIdOrLabel" type="string" required>
+  The `id` or `label` of the custom role to delete.
+</ParamField>
+
+---
+
+## RoleCResourceSetAPI — resource sets
+
+A resource set is a collection of Okta resources (identified by ORN or REST URL) that scopes the administrative access granted by a custom role binding. Resource sets are required when assigning custom roles.
+
+<Note>
+  A resource set can contain a maximum of 1000 resources. Resources are identified by Okta Resource Names (ORN) or REST URL format.
+</Note>
+
+### ListResourceSets
+
+Lists all resource sets with pagination support.
+
+```go
+func (a *RoleCResourceSetAPIService) ListResourceSets(ctx context.Context) ApiListResourceSetsRequest
+func (a *RoleCResourceSetAPIService) ListResourceSetsExecute(r ApiListResourceSetsRequest) (*ResourceSets, *APIResponse, error)
+```
+
+<ResponseField name="*ResourceSets" type="object">
+  A paginated collection of resource set objects.
+</ResponseField>
+
+### CreateResourceSet
+
+Creates a new resource set.
+
+```go
+func (a *RoleCResourceSetAPIService) CreateResourceSet(ctx context.Context) ApiCreateResourceSetRequest
+func (a *RoleCResourceSetAPIService) CreateResourceSetExecute(r ApiCreateResourceSetRequest) (*ResourceSet, *APIResponse, error)
+```
+
+<ParamField path="body.Instance" type="object" required>
+  A `CreateResourceSetRequest` with `label` (required), optional `description`, and `resources` array of ORN or URL strings.
+</ParamField>
+
+<ResponseField name="*ResourceSet" type="object">
+  The created resource set including its generated `id`.
+</ResponseField>
+
+### GetResourceSet
+
+Retrieves a resource set by its `id` or `label`.
+
+```go
+func (a *RoleCResourceSetAPIService) GetResourceSet(ctx context.Context, resourceSetIdOrLabel string) ApiGetResourceSetRequest
+func (a *RoleCResourceSetAPIService) GetResourceSetExecute(r ApiGetResourceSetRequest) (*ResourceSet, *APIResponse, error)
+```
+
+<ParamField path="path.resourceSetIdOrLabel" type="string" required>
+  The `id` or `label` of the resource set.
+</ParamField>
+
+<ResponseField name="*ResourceSet" type="object">
+  The resource set object.
+</ResponseField>
+
+### ReplaceResourceSet
+
+Replaces the `label` and `description` of a resource set.
+
+```go
+func (a *RoleCResourceSetAPIService) ReplaceResourceSet(ctx context.Context, resourceSetIdOrLabel string) ApiReplaceResourceSetRequest
+func (a *RoleCResourceSetAPIService) ReplaceResourceSetExecute(r ApiReplaceResourceSetRequest) (*ResourceSet, *APIResponse, error)
+```
+
+<ParamField path="path.resourceSetIdOrLabel" type="string" required>
+  The `id` or `label` of the resource set to update.
+</ParamField>
+
+### DeleteResourceSet
+
+Permanently deletes a resource set.
+
+```go
+func (a *RoleCResourceSetAPIService) DeleteResourceSet(ctx context.Context, resourceSetIdOrLabel string) ApiDeleteResourceSetRequest
+func (a *RoleCResourceSetAPIService) DeleteResourceSetExecute(r ApiDeleteResourceSetRequest) (*APIResponse, error)
+```
+
+<ParamField path="path.resourceSetIdOrLabel" type="string" required>
+  The `id` or `label` of the resource set to delete.
+</ParamField>
+
+---
+
+## RoleDResourceSetBindingAPI — resource set bindings
+
+A binding connects a custom role, a resource set, and one or more members (users or groups). When you create a binding, the members gain the permissions defined in the custom role, scoped to the resources in the resource set.
+
+<Warning>
+  If a custom role has permissions that don't apply to the resources in the bound resource set, those permissions have no effect. Make sure the resource set contains appropriate resources for the permissions you are granting.
+</Warning>
+
+### CreateResourceSetBinding
+
+Creates a binding for a resource set, custom role, and members.
+
+```go
+func (a *RoleDResourceSetBindingAPIService) CreateResourceSetBinding(ctx context.Context, resourceSetIdOrLabel string) ApiCreateResourceSetBindingRequest
+func (a *RoleDResourceSetBindingAPIService) CreateResourceSetBindingExecute(r ApiCreateResourceSetBindingRequest) (*ResourceSetBindingEditResponse, *APIResponse, error)
+```
+
+<ParamField path="path.resourceSetIdOrLabel" type="string" required>
+  The `id` or `label` of the resource set.
+</ParamField>
+
+<ParamField path="body.Instance" type="object" required>
+  A `ResourceSetBindingCreateRequest` specifying the `role` (custom role ID or label) and `members` array (user or group resource URLs).
+</ParamField>
+
+<ResponseField name="*ResourceSetBindingEditResponse" type="object">
+  The created binding including `_links` to the role, resource set, and members.
+</ResponseField>
+
+### Example: bind a custom role to a resource set
+
+```go
+binding := okta.ResourceSetBindingCreateRequest{
+    Role:    okta.PtrString("helpdesk-admin"),
+    Members: []string{
+        "https://{yourOktaDomain}/api/v1/users/00u1abc",
+        "https://{yourOktaDomain}/api/v1/groups/00g1xyz",
+    },
+}
+
+result, resp, err := client.RoleDResourceSetBindingAPI.
+    CreateResourceSetBinding(ctx, "my-resource-set").
+    Instance(binding).
+    Execute()
+if err != nil {
+    log.Fatalf("CreateResourceSetBinding error: %v", err)
+}
+_ = result
+_ = resp
+```
+
+### ListBindings
+
+Lists all bindings for a resource set.
+
+```go
+func (a *RoleDResourceSetBindingAPIService) ListBindings(ctx context.Context, resourceSetIdOrLabel string) ApiListBindingsRequest
+func (a *RoleDResourceSetBindingAPIService) ListBindingsExecute(r ApiListBindingsRequest) (*ResourceSetBindings, *APIResponse, error)
+```
+
+<ParamField path="path.resourceSetIdOrLabel" type="string" required>
+  The `id` or `label` of the resource set.
+</ParamField>
+
+<ResponseField name="*ResourceSetBindings" type="object">
+  A paginated collection of bindings. The `roles` array in each binding contains the associated roles. Use `links.next` when more than 100 bindings exist.
+</ResponseField>
+
+### GetBinding
+
+Retrieves a specific binding between a role and a resource set.
+
+```go
+func (a *RoleDResourceSetBindingAPIService) GetBinding(ctx context.Context, resourceSetIdOrLabel string, roleIdOrLabel string) ApiGetBindingRequest
+func (a *RoleDResourceSetBindingAPIService) GetBindingExecute(r ApiGetBindingRequest) (*ResourceSetBindingResponse, *APIResponse, error)
+```
+
+<ParamField path="path.resourceSetIdOrLabel" type="string" required>
+  The `id` or `label` of the resource set.
+</ParamField>
+
+<ParamField path="path.roleIdOrLabel" type="string" required>
+  The `id` or `label` of the custom role.
+</ParamField>
+
+<ResponseField name="*ResourceSetBindingResponse" type="object">
+  The binding object linking the role to the resource set.
+</ResponseField>
+
+### DeleteBinding
+
+Deletes the binding between a role and a resource set.
+
+```go
+func (a *RoleDResourceSetBindingAPIService) DeleteBinding(ctx context.Context, resourceSetIdOrLabel string, roleIdOrLabel string) ApiDeleteBindingRequest
+func (a *RoleDResourceSetBindingAPIService) DeleteBindingExecute(r ApiDeleteBindingRequest) (*APIResponse, error)
+```
+
+<ParamField path="path.resourceSetIdOrLabel" type="string" required>
+  The `id` or `label` of the resource set.
+</ParamField>
+
+<ParamField path="path.roleIdOrLabel" type="string" required>
+  The `id` or `label` of the custom role.
+</ParamField>

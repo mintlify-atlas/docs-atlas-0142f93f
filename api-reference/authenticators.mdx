@@ -1,0 +1,290 @@
+---
+title: "AuthenticatorAPI — Manage Okta authenticators"
+description: "Reference for client.AuthenticatorAPI: list, retrieve, create, and update Okta authenticators like WebAuthn, TOTP, email, and SMS in Go."
+---
+
+The `AuthenticatorAPI` lets you manage the authenticators available in your Okta org — the second-factor methods users enroll in, such as email magic links, SMS OTP, Google Authenticator (TOTP), hardware keys, and WebAuthn passkeys. You can enable or disable specific authenticators, configure their settings, and manage authenticator methods. The related `UserAuthenticatorEnrollmentsAPI` lets you manage individual user enrollments. All methods follow the builder pattern: call the method, chain optional parameters, then call `.Execute()`.
+
+## Authenticator key types
+
+Each authenticator is identified by a `key` string. Common values include:
+
+| Key | Description |
+|-----|-------------|
+| `email` | Email magic link or OTP |
+| `phone_number` | SMS or voice OTP |
+| `google_otp` | Google Authenticator (TOTP) |
+| `okta_verify` | Okta Verify push notifications and TOTP |
+| `webauthn` | WebAuthn / FIDO2 passkeys and hardware keys |
+| `security_question` | Knowledge-based authentication |
+| `onprem_mfa` | On-premises MFA agent |
+| `duo` | Duo Security |
+
+---
+
+## AuthenticatorAPI
+
+### `ListAuthenticators`
+
+```go
+func (a *AuthenticatorAPIService) ListAuthenticators(ctx context.Context) ApiListAuthenticatorsRequest
+```
+
+Lists all authenticators configured in the org.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context for deadlines, cancellation, and authentication.
+</ParamField>
+
+<ResponseField name="[]ListAuthenticators200ResponseInner" type="slice" required>
+  A slice of polymorphic authenticator wrappers.
+</ResponseField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+```go
+import (
+    "fmt"
+    "context"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    authenticators, resp, err := client.AuthenticatorAPI.ListAuthenticators(context.Background()).Execute()
+    if err != nil {
+        fmt.Printf("Error listing authenticators: %v\n", err)
+    }
+    fmt.Printf("Authenticators: %+v\n Response: %+v\n\n", authenticators, resp)
+}
+```
+
+---
+
+### `GetAuthenticator`
+
+```go
+func (a *AuthenticatorAPIService) GetAuthenticator(ctx context.Context, authenticatorId string) ApiGetAuthenticatorRequest
+```
+
+Retrieves an authenticator by its ID.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authenticatorId" type="string" required>
+  The unique ID of the authenticator.
+</ParamField>
+
+<ResponseField name="*AuthenticatorBase" type="object" required>
+  The authenticator object including its `key`, `name`, `status`, and `type`.
+</ResponseField>
+
+```go
+authenticator, resp, err := client.AuthenticatorAPI.
+    GetAuthenticator(context.Background(), "{authenticatorId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error getting authenticator: %v\n", err)
+}
+fmt.Printf("Authenticator: %+v\n Response: %+v\n\n", authenticator, resp)
+```
+
+---
+
+### `CreateAuthenticator`
+
+```go
+func (a *AuthenticatorAPIService) CreateAuthenticator(ctx context.Context) ApiCreateAuthenticatorRequest
+```
+
+Creates a new authenticator in the org. Use this to add a custom or integration-based authenticator.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".Authenticator(authenticator AuthenticatorBase)" type="AuthenticatorBase" required>
+  The authenticator configuration to create.
+</ParamField>
+
+**Optional chained parameters:**
+
+<ParamField path=".Activate(activate bool)" type="bool">
+  When `true`, activates the authenticator immediately after creation.
+</ParamField>
+
+<ResponseField name="*AuthenticatorBase" type="object" required>
+  The created authenticator.
+</ResponseField>
+
+```go
+newAuthenticator := okta.AuthenticatorBase{}
+newAuthenticator.SetKey("google_otp")
+newAuthenticator.SetName("Google Authenticator")
+
+authenticator, resp, err := client.AuthenticatorAPI.
+    CreateAuthenticator(context.Background()).
+    Authenticator(newAuthenticator).
+    Activate(true).
+    Execute()
+if err != nil {
+    fmt.Printf("Error creating authenticator: %v\n", err)
+}
+fmt.Printf("Created authenticator: %+v\n Response: %+v\n\n", authenticator, resp)
+```
+
+---
+
+### `ReplaceAuthenticator`
+
+```go
+func (a *AuthenticatorAPIService) ReplaceAuthenticator(ctx context.Context, authenticatorId string) ApiReplaceAuthenticatorRequest
+```
+
+Replaces the properties of an authenticator. All required properties must be present in the request body.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authenticatorId" type="string" required>
+  The unique ID of the authenticator to update.
+</ParamField>
+
+<ResponseField name="*AuthenticatorBase" type="object" required>
+  The updated authenticator.
+</ResponseField>
+
+---
+
+### `ActivateAuthenticator`
+
+```go
+func (a *AuthenticatorAPIService) ActivateAuthenticator(ctx context.Context, authenticatorId string) ApiActivateAuthenticatorRequest
+```
+
+Activates an authenticator so it becomes available for enrollment in policies.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authenticatorId" type="string" required>
+  The unique ID of the authenticator to activate.
+</ParamField>
+
+<ResponseField name="*AuthenticatorBase" type="object" required>
+  The activated authenticator with updated `status`.
+</ResponseField>
+
+```go
+authenticator, resp, err := client.AuthenticatorAPI.
+    ActivateAuthenticator(context.Background(), "{authenticatorId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error activating authenticator: %v\n", err)
+}
+fmt.Printf("Activated: %+v\n Response: %+v\n\n", authenticator, resp)
+```
+
+---
+
+### `DeactivateAuthenticator`
+
+```go
+func (a *AuthenticatorAPIService) DeactivateAuthenticator(ctx context.Context, authenticatorId string) ApiDeactivateAuthenticatorRequest
+```
+
+Deactivates an authenticator. A deactivated authenticator cannot be added to new policies, and existing enrollments for that authenticator become unavailable.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authenticatorId" type="string" required>
+  The unique ID of the authenticator to deactivate.
+</ParamField>
+
+<ResponseField name="*AuthenticatorBase" type="object" required>
+  The deactivated authenticator with updated `status`.
+</ResponseField>
+
+---
+
+### Authenticator methods
+
+Each authenticator supports one or more methods (for example, WebAuthn supports `webauthn` and `signed_nonce` methods). The following methods manage individual methods on an authenticator.
+
+| Method | Signature |
+|--------|-----------|
+| `ListAuthenticatorMethods` | `(ctx, authenticatorId) → []ListAuthenticatorMethods200ResponseInner` |
+| `GetAuthenticatorMethod` | `(ctx, authenticatorId, methodType) → *ListAuthenticatorMethods200ResponseInner` |
+| `ActivateAuthenticatorMethod` | `(ctx, authenticatorId, methodType) → *ListAuthenticatorMethods200ResponseInner` |
+| `DeactivateAuthenticatorMethod` | `(ctx, authenticatorId, methodType) → *ListAuthenticatorMethods200ResponseInner` |
+| `ReplaceAuthenticatorMethod` | `(ctx, authenticatorId, methodType) → *ListAuthenticatorMethods200ResponseInner` |
+
+---
+
+## UserAuthenticatorEnrollmentsAPI
+
+The `UserAuthenticatorEnrollmentsAPI` manages a specific user's authenticator enrollments. Access it via `client.UserAuthenticatorEnrollmentsAPI`.
+
+### Key methods
+
+<AccordionGroup>
+  <Accordion title="ListAuthenticatorEnrollments">
+    ```go
+    ListAuthenticatorEnrollments(ctx context.Context, userId string) ApiListAuthenticatorEnrollmentsRequest
+    // Returns: *AuthenticatorEnrollment
+    ```
+    Lists all authenticator enrollments for a user.
+  </Accordion>
+
+  <Accordion title="GetAuthenticatorEnrollment">
+    ```go
+    GetAuthenticatorEnrollment(ctx context.Context, userId string, enrollmentId string) ApiGetAuthenticatorEnrollmentRequest
+    // Returns: *AuthenticatorEnrollment
+    ```
+    Retrieves a specific enrollment for a user.
+  </Accordion>
+
+  <Accordion title="CreateAuthenticatorEnrollment">
+    ```go
+    CreateAuthenticatorEnrollment(ctx context.Context, userId string) ApiCreateAuthenticatorEnrollmentRequest
+    // Returns: *AuthenticatorEnrollment
+    ```
+    Creates a new authenticator enrollment for a user.
+  </Accordion>
+
+  <Accordion title="DeleteAuthenticatorEnrollment">
+    ```go
+    DeleteAuthenticatorEnrollment(ctx context.Context, userId string, enrollmentId string) ApiDeleteAuthenticatorEnrollmentRequest
+    // Returns: *APIResponse
+    ```
+    Removes an authenticator enrollment from a user.
+  </Accordion>
+</AccordionGroup>
+
+```go
+enrollments, resp, err := client.UserAuthenticatorEnrollmentsAPI.
+    ListAuthenticatorEnrollments(context.Background(), "{userId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error listing enrollments: %v\n", err)
+}
+fmt.Printf("Enrollments: %+v\n Response: %+v\n\n", enrollments, resp)
+```

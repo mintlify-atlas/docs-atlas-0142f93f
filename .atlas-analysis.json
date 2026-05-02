@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Okta Go Management SDK",
+  "projectType": "sdk-library",
+  "projectName": "Okta Go Management SDK",
+  "projectDescription": "A Go SDK for interacting with the Okta management API, enabling server-side code to manage users, groups, applications, policies, and more.",
   "theme": "luma",
-  "colors": {
-    "primary": "#848c8e",
-    "light": "#11161e",
-    "dark": "#cfd0d2"
-  },
-  "favicon": "https://media.brand.dev/2b01fe20-c04b-4a1d-a2f9-1d2789c50a7a.jpg",
-  "logo": {
-    "light": "https://media.brand.dev/5ffd6ce4-2434-4b4b-920a-f8cacac8b48b.svg",
-    "dark": "https://media.brand.dev/5ffd6ce4-2434-4b4b-920a-f8cacac8b48b.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/okta/okta-sdk-golang"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/okta/okta-sdk-golang"
-    }
-  },
+  "primaryColor": "#848c8e",
+  "lightColor": "#11161e",
+  "darkColor": "#cfd0d2",
   "navigation": {
     "tabs": [
       {
@@ -122,5 +105,33 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Full coverage of Okta Management API (users, groups, apps, policies, and more)",
+    "Multiple authentication modes: API Token (SSWS), OAuth 2.0 Private Key, JWT, and Bearer Token",
+    "Built-in request caching with configurable TTL and custom cache implementations",
+    "Automatic rate limit handling with configurable retries and backoff",
+    "Pagination support via HasNextPage/Next response helpers",
+    "DPoP (Demonstrating Proof of Possession) support for enhanced OAuth security",
+    "Generated from OpenAPI v3 spec using openapi-generator",
+    "Context-aware API calls for cancellation and deadline propagation"
+  ],
+  "publicApiSurface": [
+    "okta.NewConfiguration(...ConfigOption) (*Configuration, error)",
+    "okta.NewAPIClient(cfg *Configuration) *APIClient",
+    "client.UserAPI - user CRUD, lifecycle, factors, sessions",
+    "client.GroupAPI - group CRUD, membership management",
+    "client.ApplicationAPI - application CRUD, SSO, provisioning",
+    "client.PolicyAPI - policy and rule management",
+    "client.AuthorizationServerAPI - OAuth 2.0 authorization servers",
+    "client.AuthenticatorAPI - authenticator management",
+    "client.IdentityProviderAPI - IdP federation",
+    "client.RoleAssignmentAUserAPI / RoleAssignmentBGroupAPI - role assignments",
+    "client.SystemLogAPI - audit log access",
+    "client.EventHookAPI / InlineHookAPI - hook management",
+    "client.SchemaAPI - user and group schema customization",
+    "okta.WithOrgUrl / WithToken / WithAuthorizationMode / WithPrivateKey - config setters",
+    "cache.Cache interface - custom caching implementations",
+    "APIResponse.HasNextPage() / Next() - pagination helpers"
+  ]
 }

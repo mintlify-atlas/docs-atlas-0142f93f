@@ -1,0 +1,104 @@
+---
+title: "Rate limiting and retries in the Okta Go SDK"
+description: "The Okta Go SDK automatically retries 429 Too Many Requests responses. Learn to configure retry limits, timeouts, and backoff behavior."
+---
+
+When the Okta API returns a `429 Too Many Requests` response, the SDK automatically retries the request rather than surfacing the error to your code. The wait duration before each retry is calculated from the response headers so the SDK doesn't retry sooner than Okta will accept the request.
+
+## Default behavior
+
+By default, the SDK retries up to 2 times and caps the backoff duration at 30 seconds. There is no request timeout, so a retry loop can run indefinitely if only `WithRateLimitMaxBackOff` is the limiting factor.
+
+| Setting | Default value | Environment variable |
+|---------|---------------|----------------------|
+| Max retries | `2` | `OKTA_CLIENT_RATE_LIMIT_MAX_RETRIES` |
+| Max backoff | `30` seconds | `OKTA_CLIENT_RATE_LIMIT_MAX_BACKOFF` |
+| Request timeout | `0` (disabled) | `OKTA_CLIENT_REQUEST_TIMEOUT` |
+
+## Backoff calculation
+
+The SDK uses the `Date` and `X-Rate-Limit-Reset` headers from the `429` response to determine how long to wait:
+
+```
+backoff_seconds = X-Rate-Limit-Reset - Date + 1s
+```
+
+The `Date` header is used instead of local system time because it reflects the server's clock, which is more reliable. One second is added to account for minor clock skew between Okta servers. If the calculated `backoff_seconds` exceeds `WithRateLimitMaxBackOff`, the SDK uses the configured maximum instead.
+
+If `backoff_seconds` would exceed the remaining request timeout, the original `429` response is returned immediately without any further retry attempts.
+
+## Configuring retry behavior
+
+Pass configuration setters to `okta.NewConfiguration()` to override the defaults.
+
+```go
+import (
+    "fmt"
+    "context"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+        okta.WithRequestTimeout(45),
+        okta.WithRateLimitMaxRetries(3),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+}
+```
+
+## Interaction between timeout and max retries
+
+The two limits work independently—the SDK stops retrying as soon as either condition is met, not when both are met.
+
+- If only `WithRateLimitMaxRetries` is non-zero, the SDK retries up to that many times regardless of elapsed time.
+- If only `WithRequestTimeout` is non-zero, the SDK retries indefinitely until the timeout expires.
+- If both are non-zero, the SDK stops at whichever limit is reached first.
+
+For example, setting `WithRequestTimeout(45)` and `WithRateLimitMaxRetries(0)` results in unlimited retries for up to 45 seconds:
+
+```go
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+    okta.WithRequestTimeout(45),
+    okta.WithRateLimitMaxRetries(0), // no retry count limit
+)
+```
+
+## Disabling retries
+
+To disable automatic retries entirely, set both `WithRequestTimeout` and `WithRateLimitMaxRetries` to `0`. You can also do this via environment variables:
+
+```bash
+export OKTA_CLIENT_REQUEST_TIMEOUT=0
+export OKTA_CLIENT_RATE_LIMIT_MAX_RETRIES=0
+```
+
+Or in code:
+
+```go
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+    okta.WithRequestTimeout(0),
+    okta.WithRateLimitMaxRetries(0),
+)
+```
+
+<Warning>
+With retries disabled, your code receives `429` errors directly. You are responsible for handling them and implementing your own backoff strategy if needed.
+</Warning>
+
+## Configuration reference
+
+| Setter | Type | Description |
+|--------|------|-------------|
+| `WithRequestTimeout(requestTimeout int64)` | `int64` | Maximum total time in seconds the SDK will spend retrying a single request. `0` disables the timeout. |
+| `WithRateLimitMaxRetries(maxRetries int32)` | `int32` | Maximum number of retry attempts on a `429` response. `0` disables the retry count limit. |
+| `WithRateLimitMaxBackOff(maxBackoff int64)` | `int64` | Maximum number of seconds to wait between retries. Defaults to `30`. |

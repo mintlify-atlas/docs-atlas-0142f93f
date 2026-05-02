@@ -1,0 +1,167 @@
+---
+title: "Extend the Okta Go SDK with custom cache and HTTP"
+description: "Plug in a custom HTTP client or cache implementation to the Okta Go SDK for full control over request handling and response caching."
+---
+
+The SDK exposes extension points for three concerns: the underlying HTTP transport, the response cache, and the private key signer used for OAuth 2.0 authentication. All three are injected at client construction time via `okta.NewConfiguration`. This makes it straightforward to add middleware, integrate your own caching layer, or use a hardware-backed signing implementation without modifying SDK internals.
+
+## Custom HTTP client
+
+Pass any `*http.Client` with `WithHttpClientPtr` to replace the default transport. This lets you configure TLS settings, add request middleware, set custom timeouts, or route traffic through a proxy.
+
+```go
+import (
+    "context"
+    "fmt"
+    "net/http"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    myClient := &http.Client{
+        // Configure transport, timeout, etc. as needed.
+        Timeout: 30 * time.Second,
+    }
+
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+        okta.WithHttpClientPtr(myClient),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+    _ = client
+}
+```
+
+## Custom cache driver
+
+By default the SDK keeps a TTL-based in-memory cache of HTTP responses. You can replace it by implementing the `Cache` interface and passing your implementation with `WithCacheManager`.
+
+### The Cache interface
+
+The full interface is defined in `okta/cache.go`:
+
+```go
+type Cache interface {
+    Get(key string) *http.Response
+    Set(key string, value *http.Response)
+    GetString(key string) string
+    SetString(key string, value string)
+    Delete(key string)
+    Clear()
+    Has(key string) bool
+}
+```
+
+The `key` passed to each method is a fully qualified URL string (scheme + host + path + query). `Get` and `Set` handle full `*http.Response` objects; `GetString` and `SetString` are used for cached token strings.
+
+### Example implementation
+
+The following is a minimal no-op driver. Replace the method bodies with your preferred storage backend—Redis, Memcached, or any other store.
+
+```go
+import "net/http"
+
+type CustomCacheDriver struct{}
+
+func NewCustomCacheDriver() *CustomCacheDriver {
+    return &CustomCacheDriver{}
+}
+
+func (c CustomCacheDriver) Get(key string) *http.Response {
+    return nil
+}
+
+func (c CustomCacheDriver) Set(key string, value *http.Response) {}
+
+func (c CustomCacheDriver) GetString(key string) string {
+    return ""
+}
+
+func (c CustomCacheDriver) SetString(key string, value string) {}
+
+func (c CustomCacheDriver) Delete(key string) {}
+
+func (c CustomCacheDriver) Clear() {}
+
+func (c CustomCacheDriver) Has(key string) bool {
+    return false
+}
+```
+
+### Register the custom cache
+
+```go
+import (
+    "context"
+    "fmt"
+    "net/http"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    myClient := &http.Client{}
+    myCache := NewCustomCacheDriver()
+
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+        okta.WithHttpClientPtr(myClient),
+        okta.WithCacheManager(myCache),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+    _ = client
+}
+```
+
+<Note>
+Regardless of which cache manager you use, access tokens acquired via OAuth 2.0 are always cached internally by the SDK and respect the `expires_in` value from the token response.
+</Note>
+
+To disable caching entirely, pass `WithCache(false)` instead of providing a custom manager:
+
+```go
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+    okta.WithCache(false),
+)
+```
+
+## Custom private key signer
+
+When using OAuth 2.0 with the `PrivateKey` authorization mode, the SDK signs JWTs using the key material you provide. For cases where the private key lives outside the application—such as in a hardware security module or a key management service—you can supply a `jose.Signer` directly with `WithPrivateKeySigner`.
+
+```go
+import (
+    "fmt"
+    "github.com/go-jose/go-jose/v3"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    // signer must implement the jose.Signer interface.
+    var signer jose.Signer = buildYourSigner()
+
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithAuthorizationMode("PrivateKey"),
+        okta.WithClientId("{yourClientId}"),
+        okta.WithScopes([]string{"okta.users.manage"}),
+        okta.WithPrivateKeySigner(signer),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+    _ = client
+}
+```
+
+`WithPrivateKeySigner` takes precedence over `WithPrivateKey` when both are supplied. Use it when the raw PEM key bytes are not available in the process—only signing operations need to be delegated to the external system.

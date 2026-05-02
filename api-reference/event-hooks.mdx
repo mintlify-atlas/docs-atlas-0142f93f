@@ -1,0 +1,309 @@
+---
+title: "EventHookAPI — Manage Okta event hooks"
+description: "Reference for client.EventHookAPI: create, configure, and manage Okta event hooks that deliver real-time event notifications via HTTP in Go."
+---
+
+Event hooks let you subscribe to Okta events and receive real-time HTTP notifications at an external service endpoint. When a subscribed event fires, Okta sends a POST request to your endpoint with a JSON payload describing the event. The `EventHookAPI` in the Go SDK covers the full lifecycle: create, read, update, delete, verify, activate, and deactivate event hooks.
+
+Accessed via `client.EventHookAPI()`.
+
+---
+
+## EventHook model
+
+`EventHook` represents a registered event hook and its delivery configuration.
+
+<ResponseField name="id" type="string">
+  Unique identifier for the event hook. Assigned by Okta on creation.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Display name for the event hook.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Lifecycle status: `ACTIVE` or `INACTIVE`. Only `INACTIVE` hooks can be deleted.
+</ResponseField>
+
+<ResponseField name="verificationStatus" type="string">
+  Whether the hook endpoint has been verified. Values: `UNVERIFIED`, `VERIFIED`. Unverified hooks do not receive events.
+</ResponseField>
+
+<ResponseField name="channel" type="object" required>
+  Delivery channel configuration.
+  <Expandable title="EventHookChannel fields">
+    <ResponseField name="type" type="string" required>Channel type. Currently only `HTTP` is supported.</ResponseField>
+    <ResponseField name="version" type="string" required>Channel version. Use `1.0.0`.</ResponseField>
+    <ResponseField name="config" type="object" required>
+      Channel-level configuration.
+      <Expandable title="EventHookChannelConfig fields">
+        <ResponseField name="uri" type="string" required>The HTTPS endpoint URL that Okta calls when events fire.</ResponseField>
+        <ResponseField name="method" type="string">HTTP method for the request. Defaults to `POST`.</ResponseField>
+        <ResponseField name="headers" type="object[]">Optional list of additional HTTP headers to include in the request. Each entry has `key` and `value` fields.</ResponseField>
+        <ResponseField name="authScheme" type="object">
+          Authentication scheme for the outbound request.
+          <Expandable title="EventHookChannelConfigAuthScheme fields">
+            <ResponseField name="type" type="string">Authentication scheme type. Currently only `HEADER` is supported.</ResponseField>
+            <ResponseField name="key" type="string">Name of the authorization header, for example `Authorization`.</ResponseField>
+            <ResponseField name="value" type="string">Secret value sent in the header. Not returned in GET responses.</ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="events" type="object" required>
+  The set of Okta event types the hook is subscribed to.
+  <Expandable title="EventSubscriptions fields">
+    <ResponseField name="type" type="string">Subscription type. Use `EVENT_TYPE` to subscribe by event type string.</ResponseField>
+    <ResponseField name="items" type="string[]">List of event type strings, for example `["user.lifecycle.create", "user.lifecycle.delete.initiated"]`.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Optional human-readable description of the hook.
+</ResponseField>
+
+<ResponseField name="created" type="time.Time">
+  Timestamp when the hook was created.
+</ResponseField>
+
+<ResponseField name="createdBy" type="string">
+  ID of the user who created the hook.
+</ResponseField>
+
+<ResponseField name="lastUpdated" type="time.Time">
+  Timestamp of the most recent update.
+</ResponseField>
+
+---
+
+## ListEventHooks
+
+Lists all event hooks registered in the org.
+
+```go
+func (a *EventHookAPIService) ListEventHooks(ctx context.Context) ApiListEventHooksRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+**Returns** `([]EventHook, *APIResponse, error)`
+
+---
+
+## GetEventHook
+
+Retrieves a single event hook by ID.
+
+```go
+func (a *EventHookAPIService) GetEventHook(ctx context.Context, eventHookId string) ApiGetEventHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="eventHookId" type="string" required>
+  The `id` of the event hook to retrieve.
+</ParamField>
+
+**Returns** `(*EventHook, *APIResponse, error)`
+
+---
+
+## CreateEventHook
+
+Creates a new event hook in `ACTIVE` status. The new hook starts in `UNVERIFIED` state and does not deliver events until you call `VerifyEventHook`.
+
+```go
+func (a *EventHookAPIService) CreateEventHook(ctx context.Context) ApiCreateEventHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+Chain `.EventHook(okta.EventHook{...})` on the returned request to provide the hook definition, then call `.Execute()`.
+
+**Returns** `(*EventHook, *APIResponse, error)`
+
+---
+
+## UpdateEventHook (ReplaceEventHook)
+
+Replaces an existing event hook's properties. Some properties are immutable. Changing the `channel` property resets `verificationStatus` to `UNVERIFIED` and requires re-verification.
+
+```go
+func (a *EventHookAPIService) ReplaceEventHook(ctx context.Context, eventHookId string) ApiReplaceEventHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="eventHookId" type="string" required>
+  The `id` of the event hook to update.
+</ParamField>
+
+**Returns** `(*EventHook, *APIResponse, error)`
+
+---
+
+## DeleteEventHook
+
+Permanently deletes an event hook. The hook must have `INACTIVE` status before deletion; it is unrecoverable afterward.
+
+```go
+func (a *EventHookAPIService) DeleteEventHook(ctx context.Context, eventHookId string) ApiDeleteEventHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="eventHookId" type="string" required>
+  The `id` of the event hook to delete.
+</ParamField>
+
+**Returns** `(*APIResponse, error)`
+
+---
+
+## ActivateEventHook
+
+Activates an inactive event hook so it starts receiving events.
+
+```go
+func (a *EventHookAPIService) ActivateEventHook(ctx context.Context, eventHookId string) ApiActivateEventHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="eventHookId" type="string" required>
+  The `id` of the event hook to activate.
+</ParamField>
+
+**Returns** `(*EventHook, *APIResponse, error)`
+
+---
+
+## DeactivateEventHook
+
+Deactivates an active event hook so it stops receiving events.
+
+```go
+func (a *EventHookAPIService) DeactivateEventHook(ctx context.Context, eventHookId string) ApiDeactivateEventHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="eventHookId" type="string" required>
+  The `id` of the event hook to deactivate.
+</ParamField>
+
+**Returns** `(*EventHook, *APIResponse, error)`
+
+---
+
+## VerifyEventHook
+
+Triggers Okta's one-time verification flow for the hook endpoint. Okta sends a verification request to the configured `uri`; your service must respond correctly for the hook to become `VERIFIED` and begin delivering events.
+
+```go
+func (a *EventHookAPIService) VerifyEventHook(ctx context.Context, eventHookId string) ApiVerifyEventHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="eventHookId" type="string" required>
+  The `id` of the event hook to verify.
+</ParamField>
+
+**Returns** `(*EventHook, *APIResponse, error)`
+
+---
+
+## Example: creating an event hook
+
+The following example creates an event hook that subscribes to user lifecycle events and authenticates outbound requests with a secret header.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	okta "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+	cfg, err := okta.NewConfiguration()
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := okta.NewAPIClient(cfg)
+	ctx := context.Background()
+
+	// Build the auth scheme
+	authScheme := okta.EventHookChannelConfigAuthScheme{}
+	authScheme.SetType("HEADER")
+	authScheme.SetKey("Authorization")
+	authScheme.SetValue("Bearer my-secret-token")
+
+	// Build the channel config
+	channelConfig := okta.NewEventHookChannelConfig("https://hooks.example.com/okta/events")
+	channelConfig.SetAuthScheme(authScheme)
+
+	// Build the channel
+	channel := okta.NewEventHookChannel(*channelConfig, "HTTP", "1.0.0")
+
+	// Define the subscribed event types
+	events := okta.EventSubscriptions{}
+	events.SetType("EVENT_TYPE")
+	events.SetItems([]string{
+		"user.lifecycle.create",
+		"user.lifecycle.delete.initiated",
+		"user.session.start",
+	})
+
+	// Assemble and create the hook
+	hook := okta.NewEventHook(*channel, events, "User Lifecycle Notifier")
+	hook.SetDescription("Notifies external service of user lifecycle changes")
+
+	created, _, err := client.EventHookAPI().
+		CreateEventHook(ctx).
+		EventHook(*hook).
+		Execute()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Created event hook: %s (id: %s, status: %s)\n",
+		created.Name, *created.Id, *created.Status)
+
+	// Verify the hook so it starts delivering events
+	verified, _, err := client.EventHookAPI().
+		VerifyEventHook(ctx, *created.Id).
+		Execute()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Verification status: %s\n", *verified.VerificationStatus)
+}
+```
+
+<Warning>
+  Event hooks must be verified before they deliver any events. After calling `CreateEventHook`, call `VerifyEventHook` once your external endpoint is ready to handle the verification request from Okta.
+</Warning>

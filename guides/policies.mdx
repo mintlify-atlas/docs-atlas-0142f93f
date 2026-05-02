@@ -1,0 +1,207 @@
+---
+title: "Manage Okta policies and rules with the Go SDK"
+description: "Create and manage Okta sign-on, password, and profile enrollment policies and policy rules using the PolicyAPI methods in the Go SDK."
+---
+
+Okta policies control how users authenticate and what they're required to do during sign-in. The `PolicyAPI` lets you list, retrieve, create, update, and activate policies of all types, and manage the rules within each policy that determine how the policy is evaluated.
+
+## List policies
+
+`ListPolicies` requires a `Type` query parameter. Pass the policy type string to filter the results to just that category.
+
+<Tabs>
+  <Tab title="Sign-on policy">
+    ```go
+    import (
+        "context"
+        "fmt"
+        "github.com/okta/okta-sdk-golang/v6/okta"
+    )
+
+    func main() {
+        config, err := okta.NewConfiguration(
+            okta.WithOrgUrl("https://{yourOktaDomain}"),
+            okta.WithToken("{apiToken}"),
+        )
+        if err != nil {
+            fmt.Printf("Error: %v\n", err)
+        }
+        client := okta.NewAPIClient(config)
+
+        policies, resp, err := client.PolicyAPI.ListPolicies(context.Background()).
+            Type("OKTA_SIGN_ON").
+            Execute()
+        if err != nil {
+            fmt.Printf("Error listing policies: %v\n", err)
+        }
+        fmt.Printf("Policies: %+v\n Response: %+v\n\n", policies, resp)
+    }
+    ```
+  </Tab>
+  <Tab title="Password policy">
+    ```go
+    policies, resp, err := client.PolicyAPI.ListPolicies(context.Background()).
+        Type("PASSWORD").
+        Execute()
+    if err != nil {
+        fmt.Printf("Error listing policies: %v\n", err)
+    }
+    ```
+  </Tab>
+  <Tab title="Profile enrollment policy">
+    ```go
+    policies, resp, err := client.PolicyAPI.ListPolicies(context.Background()).
+        Type("PROFILE_ENROLLMENT").
+        Execute()
+    if err != nil {
+        fmt.Printf("Error listing policies: %v\n", err)
+    }
+    ```
+  </Tab>
+</Tabs>
+
+Supported type values include `OKTA_SIGN_ON`, `PASSWORD`, `MFA_ENROLL`, `PROFILE_ENROLLMENT`, `ACCESS_POLICY`, `ENTITY_RISK`, `POST_AUTH_SESSION`, and `CONTINUOUS_ACCESS`.
+
+## Get a policy
+
+Retrieve a single policy by ID.
+
+```go
+policy, resp, err := client.PolicyAPI.GetPolicy(context.Background(), "{policyId}").Execute()
+if err != nil {
+    fmt.Printf("Error getting policy: %v\n", err)
+}
+fmt.Printf("Policy: %+v\n Response: %+v\n\n", policy, resp)
+```
+
+The return type is `*ListPolicies200ResponseInner`, a union type that wraps the concrete policy struct for the relevant policy type.
+
+## Create a policy
+
+`CreatePolicy` accepts a `CreatePolicyRequest` body. The shape of the request body depends on the policy type; refer to the Okta Management API reference for type-specific schemas.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    policyBody := okta.CreatePolicyRequest{}
+    // Set type-specific fields via the appropriate embedded struct or
+    // SetType / SetName / SetDescription helper methods on CreatePolicyRequest.
+    policyBody.SetType("PASSWORD")
+    policyBody.SetName("Custom Password Policy")
+    policyBody.SetDescription("Enforces strong password requirements")
+    policyBody.SetStatus("ACTIVE")
+
+    policy, resp, err := client.PolicyAPI.CreatePolicy(context.Background()).
+        Policy(policyBody).
+        Execute()
+    if err != nil {
+        fmt.Printf("Error creating policy: %v\n", err)
+    }
+    fmt.Printf("Policy: %+v\n Response: %+v\n\n", policy, resp)
+}
+```
+
+## Update (replace) a policy
+
+`ReplacePolicy` performs a full replacement of the policy properties identified by `policyId`. All required fields must be present in the request body.
+
+```go
+updatedBody := okta.CreatePolicyRequest{}
+updatedBody.SetName("Updated Password Policy")
+updatedBody.SetDescription("Updated description")
+updatedBody.SetStatus("ACTIVE")
+
+updatedPolicy, resp, err := client.PolicyAPI.ReplacePolicy(context.Background(), "{policyId}").
+    Policy(updatedBody).
+    Execute()
+if err != nil {
+    fmt.Printf("Error updating policy: %v\n", err)
+}
+fmt.Printf("Updated policy: %+v\n Response: %+v\n\n", updatedPolicy, resp)
+```
+
+## List policy rules
+
+Each policy contains one or more rules that are evaluated in priority order. `ListPolicyRules` returns all rules for a given policy.
+
+```go
+rules, resp, err := client.PolicyAPI.ListPolicyRules(context.Background(), "{policyId}").Execute()
+if err != nil {
+    fmt.Printf("Error listing policy rules: %v\n", err)
+}
+for _, rule := range rules {
+    fmt.Printf("Rule: %+v\n", rule)
+}
+```
+
+## Create a policy rule
+
+`CreatePolicyRule` adds a new rule to an existing policy. The rule body shape depends on the parent policy type.
+
+```go
+ruleBody := okta.ListPolicyRules200ResponseInner{}
+// Populate the appropriate embedded rule struct for your policy type.
+// For example, for an OKTA_SIGN_ON policy use OktaSignOnPolicyRule.
+
+rule, resp, err := client.PolicyAPI.CreatePolicyRule(context.Background(), "{policyId}").
+    PolicyRule(ruleBody).
+    Execute()
+if err != nil {
+    fmt.Printf("Error creating policy rule: %v\n", err)
+}
+fmt.Printf("Rule: %+v\n Response: %+v\n\n", rule, resp)
+```
+
+<Note>
+You cannot add rules to `PROFILE_ENROLLMENT`, `POST_AUTH_SESSION`, or `CLIENT_UPDATE` policy types.
+</Note>
+
+## Activate and deactivate policies
+
+Policies and their rules each have independent lifecycle states. Use `ActivatePolicy` / `DeactivatePolicy` for the policy itself, and `ActivatePolicyRule` / `DeactivatePolicyRule` for individual rules.
+
+<CodeGroup>
+
+```go Activate policy
+resp, err := client.PolicyAPI.ActivatePolicy(context.Background(), "{policyId}").Execute()
+if err != nil {
+    fmt.Printf("Error activating policy: %v\n", err)
+}
+```
+
+```go Deactivate policy
+resp, err := client.PolicyAPI.DeactivatePolicy(context.Background(), "{policyId}").Execute()
+if err != nil {
+    fmt.Printf("Error deactivating policy: %v\n", err)
+}
+```
+
+```go Activate rule
+resp, err := client.PolicyAPI.ActivatePolicyRule(context.Background(), "{policyId}", "{ruleId}").Execute()
+if err != nil {
+    fmt.Printf("Error activating policy rule: %v\n", err)
+}
+```
+
+```go Deactivate rule
+resp, err := client.PolicyAPI.DeactivatePolicyRule(context.Background(), "{policyId}", "{ruleId}").Execute()
+if err != nil {
+    fmt.Printf("Error deactivating policy rule: %v\n", err)
+}
+```
+
+</CodeGroup>

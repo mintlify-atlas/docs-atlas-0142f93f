@@ -1,0 +1,243 @@
+---
+title: "Migrate from v2 to v4 of the Okta Go SDK"
+description: "A complete guide to breaking changes when upgrading from okta-sdk-golang v2 to v4, including the new client pattern and model changes."
+---
+
+Versions 4 and later of the Okta Go Management SDK are built on the OpenAPI v3 specification and generated with `openapi-generator.tech`, replacing the custom code-generation approach used in v2. This change improves spec compliance, enables faster releases when new Okta APIs ship, and removes vendor extensions from the public interface. The trade-off is a set of breaking changes in how you initialize the client, call API methods, manipulate models, and handle polymorphic types. This guide covers every change with side-by-side code examples.
+
+<Warning>
+  The v2-to-v4 migration is a significant effort. The client constructor, all method signatures, model construction patterns, polymorphic type handling, and `_links` access all changed. Plan to touch every file that imports the SDK.
+</Warning>
+
+<Note>
+  v3 was an internal release. v2.x users should migrate directly to v4.x (or the current stable v6.x). v5 is essentially a module rename of v4, so the patterns in this guide apply equally when targeting v5 or v6.
+</Note>
+
+## What changed and why
+
+In v2, the SDK used an OpenAPI v2 specification and a custom Okta-maintained generator. v4 moves to an OpenAPI v3 specification and the well-known `openapi-generator.tech` generator. This brings several improvements:
+
+- The spec is fully OASv3-compliant with no custom vendor extensions.
+- Each API resource has its own dedicated client instead of a single global `OktaClient`.
+- Polymorphic models (App, Policy, Authenticator, etc.) are represented as structured union types rather than `interface{}` values you must cast.
+- `_links` are exposed as typed properties rather than raw `map[string]interface{}` data.
+- Request parameters are passed via a builder pattern, removing the need for `query.Params` structs.
+
+## Migration steps
+
+<Steps>
+
+<Step title="Update the module dependency">
+
+Remove the v2 dependency and install v4 (or the latest stable v6):
+
+```bash
+go get github.com/okta/okta-sdk-golang/v4@latest
+```
+
+To install the current stable release instead:
+
+```bash
+go get github.com/okta/okta-sdk-golang/v6@latest
+```
+
+Update your import paths throughout the codebase to match the version you chose.
+
+</Step>
+
+<Step title="Replace client initialization">
+
+v2 uses `okta.NewClient` which returns a context-bound global client. v4 uses `okta.NewConfiguration` and `okta.NewAPIClient` which returns a struct with per-API sub-clients.
+
+</Step>
+
+<Step title="Update all API call sites">
+
+Every method call changes from `client.<Resource>.<Method>(ctx, args...)` to `client.<Resource>API.<Method>(ctx, args...).Execute()`.
+
+</Step>
+
+<Step title="Update model construction">
+
+Replace map-style `UserProfile` assignment with `AdditionalProperties`, and replace struct literals with constructor functions where required.
+
+</Step>
+
+<Step title="Update polymorphic type access">
+
+Replace type assertions (`.(*)`) with direct field access on the union struct.
+
+</Step>
+
+<Step title="Update _links access">
+
+Replace raw `map[string]interface{}` traversal with typed property access.
+
+</Step>
+
+</Steps>
+
+## Breaking changes
+
+### Client initialization
+
+In v2, you call `okta.NewClient` with a context and receive back both a context and the client. In v4, you create a configuration separately and pass it to `okta.NewAPIClient`. The returned client holds sub-clients for each API resource (e.g., `client.UserAPI`, `client.GroupAPI`).
+
+<CodeGroup>
+
+```go v2
+ctx, client, err := okta.NewClient(
+    context.TODO(),
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+)
+if err != nil {
+    fmt.Printf("Error: %v\n", err)
+}
+
+user, resp, err := client.User.GetUser(ctx, "{UserId|Username|Email}")
+if err != nil {
+    fmt.Printf("Error Getting User: %v\n", err)
+}
+fmt.Printf("User: %+v\n Response: %+v\n\n", user, resp)
+```
+
+```go v4
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+)
+if err != nil {
+    return nil, err
+}
+client := okta.NewAPIClient(config)
+
+user, resp, err := client.UserAPI.GetUser(context.TODO(), "{UserId|Username|Email}").Execute()
+if err != nil {
+    fmt.Printf("Error Getting User: %v\n", err)
+}
+fmt.Printf("User: %+v\n Response: %+v\n\n", user, resp)
+```
+
+</CodeGroup>
+
+Key differences:
+
+- `okta.NewClient(ctx, opts...)` → `okta.NewConfiguration(opts...)` + `okta.NewAPIClient(config)`
+- Context is no longer stored on the client; pass it to each call individually.
+- `client.User` → `client.UserAPI` (all resource sub-clients are now named with the `API` suffix).
+- `.Execute()` must be called at the end of every API method chain.
+
+### Method call pattern
+
+Every API method now returns a request builder rather than making the HTTP call immediately. You chain any optional parameters onto the builder and call `.Execute()` to dispatch the request.
+
+<CodeGroup>
+
+```go v2
+user, resp, err := client.User.GetUser(ctx, "{UserId|Username|Email}")
+```
+
+```go v4
+user, resp, err := client.UserAPI.GetUser(ctx, "{UserId|Username|Email}").Execute()
+```
+
+</CodeGroup>
+
+For methods that accept query parameters, pass them as chained builder methods instead of a `*query.Params` struct:
+
+<CodeGroup>
+
+```go v2
+users, resp, err := client.User.ListUsers(ctx, &query.Params{
+    Limit: 10,
+    Filter: `status eq "ACTIVE"`,
+})
+```
+
+```go v4
+users, resp, err := client.UserAPI.ListUsers(ctx).
+    Limit(10).
+    Filter(`status eq "ACTIVE"`).
+    Execute()
+```
+
+</CodeGroup>
+
+### Custom attributes (AdditionalProperties)
+
+In v2, `UserProfile` is a `map[string]interface{}` and you set attributes by key directly. In v4, `UserProfile` is a generated struct and custom (schema-defined) attributes that do not have dedicated fields are set via the `AdditionalProperties` map on the struct.
+
+<CodeGroup>
+
+```go v2
+profile := okta.UserProfile{}
+profile["firstName"] = "John"
+profile["lastName"] = "Activate"
+```
+
+```go v4
+profile := make(map[string]interface{})
+profile["firstName"] = "John"
+profile["lastName"] = "Activate"
+user.Profile.AdditionalProperties = profile
+```
+
+</CodeGroup>
+
+Standard profile fields that are part of the base Okta schema (`firstName`, `lastName`, `email`, `login`) also have typed setters available on the profile struct in v4+, which is the preferred approach for those fields.
+
+### Polymorphic models
+
+In v2, methods that return polymorphic types (such as `GetApplication`, `GetPolicy`, or `GetAuthenticator`) return a generic interface value. You must type-assert to the concrete type to access its fields.
+
+In v4, the SDK returns a union struct. Each possible concrete type is available as a pointer field on that struct. The field that matches the actual response type will be non-nil; all others will be nil.
+
+<CodeGroup>
+
+```go v2
+retrievedApp, _, err := client.Application.GetApplication(ctx, appId, okta.NewBasicAuthApplication(), nil)
+app := retrievedApp.(*okta.BasicAuthApplication)
+```
+
+```go v4
+retrievedApp, _, err := client.ApplicationAPI.GetApplication(ctx, createdApp.BasicAuthApplication.GetId()).Execute()
+app := retrievedApp.BasicAuthApplication
+```
+
+</CodeGroup>
+
+You no longer need to provide a type hint to `GetApplication` as the second-to-last argument; the response struct itself carries all possible concrete types.
+
+### Accessing `_links`
+
+In v2, HAL `_links` on response objects are exposed as `interface{}` values that you must assert and traverse manually. In v4, `_links` are exposed as typed properties with named fields.
+
+<CodeGroup>
+
+```go v2
+var links = createdApp.Links.(map[string]interface{})
+accessPolicyLinks, ok := links["accessPolicy"]
+accessPolicyLinksHref, ok := accessPolicyLinks.(map[string]interface{})
+href, ok := accessPolicyLinksHref["accessPolicy"]
+```
+
+```go v4
+var accessPolicyHref = createdApp.Links.AccessPolicy.Href
+```
+
+</CodeGroup>
+
+This makes link traversal type-safe and eliminates the need for repeated type assertions and nil checks.
+
+## Features carried forward
+
+The following capabilities from v2 are fully available in v4 and later versions:
+
+- **Inline configuration** — pass options directly to `okta.NewConfiguration`
+- **Environment variable configuration** — `OKTA_CLIENT_ORGURL`, `OKTA_CLIENT_TOKEN`, and related variables are still supported
+- **YAML file configuration** — `~/.okta/okta.yaml` or `.okta.yaml` in the project root
+- **Manual pagination** — `resp.HasNextPage()` and `resp.Next()` helpers work on all list responses
+- **Automatic retry on 429** — the SDK retries rate-limited responses with backoff by default; configure with `WithRequestTimeout` and `WithRateLimitMaxRetries`
+- **Web proxy** — configure with `WithProxyHost`, `WithProxyPort`, `WithProxyUsername`, and `WithProxyPassword`
+- **OAuth for Okta** — private key (service app) authentication is supported; see the [OAuth 2.0 with Private Key](/authentication/oauth2-private-key) guide

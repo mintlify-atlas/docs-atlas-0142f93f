@@ -1,0 +1,344 @@
+---
+title: "BehaviorAPI — Manage Okta behavior detection rules"
+description: "Reference for client.BehaviorAPI: create and manage behavior detection rules for anomalous device, IP, and location activity in the Go SDK."
+---
+
+Behavior detection rules let Okta identify unusual activity patterns for a user—such as signing in from a new device, an unfamiliar IP, an unexpected geographic location, or at an implausibly high travel velocity—and use those signals as risk factors in your policies. The `BehaviorAPI` manages the full lifecycle of these rules, from creation through activation and deletion.
+
+## Behavior rule types
+
+Each rule targets a specific class of anomalous behavior. You supply the `type` string when creating or filtering rules.
+
+| Type | Go struct | Description |
+|------|-----------|-------------|
+| `ANOMALOUS_LOCATION` | `BehaviorRuleAnomalousLocation` | Flags sign-ins from geographic locations not seen in the user's history |
+| `ANOMALOUS_DEVICE` | `BehaviorRuleAnomalousDevice` | Flags sign-ins from devices not seen in the user's history |
+| `ANOMALOUS_IP` | `BehaviorRuleAnomalousIP` | Flags sign-ins from IP addresses not seen in the user's history |
+| `VELOCITY` | `BehaviorRuleVelocity` | Flags sign-ins that would require physically impossible travel speed between two locations |
+
+## Access the API
+
+```go
+client, err := okta.NewClient(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+behaviorAPI := client.BehaviorAPI
+```
+
+---
+
+## ListBehaviorDetectionRules
+
+Lists all behavior detection rules with pagination support.
+
+```go
+func (a *BehaviorAPIService) ListBehaviorDetectionRules(ctx context.Context) ApiListBehaviorDetectionRulesRequest
+func (a *BehaviorAPIService) ListBehaviorDetectionRulesExecute(r ApiListBehaviorDetectionRulesRequest) ([]ListBehaviorDetectionRules200ResponseInner, *APIResponse, error)
+```
+
+### Returns
+
+<ResponseField name="[]ListBehaviorDetectionRules200ResponseInner" type="object[]">
+  A list of behavior detection rule objects. Each element is a discriminated union resolving to the concrete rule type based on the `type` field.
+</ResponseField>
+
+### Example: list all behavior rules
+
+```go
+rules, resp, err := client.BehaviorAPI.
+    ListBehaviorDetectionRules(ctx).
+    Execute()
+if err != nil {
+    log.Fatalf("ListBehaviorDetectionRules error: %v", err)
+}
+
+for _, r := range rules {
+    if loc := r.BehaviorRuleAnomalousLocation; loc != nil {
+        fmt.Printf("Location rule: %s (id=%s, status=%s)\n",
+            loc.GetName(), loc.GetId(), loc.GetStatus())
+    } else if vel := r.BehaviorRuleVelocity; vel != nil {
+        fmt.Printf("Velocity rule: %s (id=%s)\n",
+            vel.GetName(), vel.GetId())
+    }
+}
+_ = resp
+```
+
+---
+
+## GetBehaviorDetectionRule
+
+Retrieves a single behavior detection rule by its ID.
+
+```go
+func (a *BehaviorAPIService) GetBehaviorDetectionRule(ctx context.Context, behaviorId string) ApiGetBehaviorDetectionRuleRequest
+func (a *BehaviorAPIService) GetBehaviorDetectionRuleExecute(r ApiGetBehaviorDetectionRuleRequest) (*ListBehaviorDetectionRules200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.behaviorId" type="string" required>
+  ID of the behavior detection rule.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListBehaviorDetectionRules200ResponseInner" type="object">
+  The behavior detection rule object. Inspect the type-specific fields (for example, `.BehaviorRuleAnomalousLocation`) to access rule settings.
+</ResponseField>
+
+---
+
+## CreateBehaviorDetectionRule
+
+Creates a new behavior detection rule.
+
+```go
+func (a *BehaviorAPIService) CreateBehaviorDetectionRule(ctx context.Context) ApiCreateBehaviorDetectionRuleRequest
+func (a *BehaviorAPIService) CreateBehaviorDetectionRuleExecute(r ApiCreateBehaviorDetectionRuleRequest) (*ListBehaviorDetectionRules200ResponseInner, *APIResponse, error)
+```
+
+### Request body options
+
+<ParamField path="body.Rule" type="object" required>
+  A `ListBehaviorDetectionRules200ResponseInner` containing the populated rule variant. Must include `name` and `type` in the embedded `BehaviorRule` base.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListBehaviorDetectionRules200ResponseInner" type="object">
+  The created rule including its generated `id`.
+</ResponseField>
+
+### Example: create an anomalous location rule
+
+```go
+settings := okta.NewBehaviorRuleSettingsAnomalousLocation("CITY")
+settings.SetMaxEventsUsedForEvaluation(20)
+settings.SetMinEventsNeededForEvaluation(0)
+
+rule := okta.ListBehaviorDetectionRules200ResponseInner{
+    BehaviorRuleAnomalousLocation: &okta.BehaviorRuleAnomalousLocation{
+        BehaviorRule: okta.BehaviorRule{
+            Name: "New City Sign-In",
+            Type: "ANOMALOUS_LOCATION",
+        },
+        Settings: settings,
+    },
+}
+
+created, resp, err := client.BehaviorAPI.
+    CreateBehaviorDetectionRule(ctx).
+    Rule(rule).
+    Execute()
+if err != nil {
+    log.Fatalf("CreateBehaviorDetectionRule error: %v", err)
+}
+fmt.Printf("Created rule id: %s\n", created.BehaviorRuleAnomalousLocation.GetId())
+_ = resp
+```
+
+### Example: create a velocity rule
+
+```go
+settings := okta.NewBehaviorRuleSettingsVelocity(805) // 805 kph default threshold
+
+rule := okta.ListBehaviorDetectionRules200ResponseInner{
+    BehaviorRuleVelocity: &okta.BehaviorRuleVelocity{
+        BehaviorRule: okta.BehaviorRule{
+            Name: "Impossible Travel",
+            Type: "VELOCITY",
+        },
+        Settings: settings,
+    },
+}
+
+created, resp, err := client.BehaviorAPI.
+    CreateBehaviorDetectionRule(ctx).
+    Rule(rule).
+    Execute()
+if err != nil {
+    log.Fatalf("CreateBehaviorDetectionRule error: %v", err)
+}
+_ = resp
+```
+
+---
+
+## ReplaceBehaviorDetectionRule
+
+Fully replaces a behavior detection rule by its ID.
+
+```go
+func (a *BehaviorAPIService) ReplaceBehaviorDetectionRule(ctx context.Context, behaviorId string) ApiReplaceBehaviorDetectionRuleRequest
+func (a *BehaviorAPIService) ReplaceBehaviorDetectionRuleExecute(r ApiReplaceBehaviorDetectionRuleRequest) (*ListBehaviorDetectionRules200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.behaviorId" type="string" required>
+  ID of the behavior detection rule to replace.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListBehaviorDetectionRules200ResponseInner" type="object">
+  The updated behavior detection rule.
+</ResponseField>
+
+---
+
+## DeleteBehaviorDetectionRule
+
+Permanently deletes a behavior detection rule.
+
+```go
+func (a *BehaviorAPIService) DeleteBehaviorDetectionRule(ctx context.Context, behaviorId string) ApiDeleteBehaviorDetectionRuleRequest
+func (a *BehaviorAPIService) DeleteBehaviorDetectionRuleExecute(r ApiDeleteBehaviorDetectionRuleRequest) (*APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.behaviorId" type="string" required>
+  ID of the behavior detection rule to delete.
+</ParamField>
+
+---
+
+## ActivateBehaviorDetectionRule
+
+Activates a behavior detection rule so it is evaluated during sign-in flows.
+
+```go
+func (a *BehaviorAPIService) ActivateBehaviorDetectionRule(ctx context.Context, behaviorId string) ApiActivateBehaviorDetectionRuleRequest
+func (a *BehaviorAPIService) ActivateBehaviorDetectionRuleExecute(r ApiActivateBehaviorDetectionRuleRequest) (*ListBehaviorDetectionRules200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.behaviorId" type="string" required>
+  ID of the behavior detection rule to activate.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListBehaviorDetectionRules200ResponseInner" type="object">
+  The updated rule with `status` set to `ACTIVE`.
+</ResponseField>
+
+---
+
+## DeactivateBehaviorDetectionRule
+
+Deactivates a behavior detection rule. Deactivated rules are not evaluated during sign-in flows.
+
+```go
+func (a *BehaviorAPIService) DeactivateBehaviorDetectionRule(ctx context.Context, behaviorId string) ApiDeactivateBehaviorDetectionRuleRequest
+func (a *BehaviorAPIService) DeactivateBehaviorDetectionRuleExecute(r ApiDeactivateBehaviorDetectionRuleRequest) (*ListBehaviorDetectionRules200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.behaviorId" type="string" required>
+  ID of the behavior detection rule to deactivate.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListBehaviorDetectionRules200ResponseInner" type="object">
+  The updated rule with `status` set to `INACTIVE`.
+</ResponseField>
+
+---
+
+## Model reference
+
+### BehaviorRule (base type)
+
+All rule variants embed this base struct.
+
+<ResponseField name="id" type="string">
+  Unique identifier for the rule. Read-only; set by Okta on creation.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable name for the rule.
+</ResponseField>
+
+<ResponseField name="type" type="string" required>
+  The rule type. One of `ANOMALOUS_LOCATION`, `ANOMALOUS_DEVICE`, `ANOMALOUS_IP`, or `VELOCITY`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `ACTIVE` or `INACTIVE`.
+</ResponseField>
+
+<ResponseField name="created" type="string">
+  Timestamp when the rule was created.
+</ResponseField>
+
+<ResponseField name="lastUpdated" type="string">
+  Timestamp when the rule was last modified.
+</ResponseField>
+
+---
+
+### ANOMALOUS_LOCATION settings
+
+`BehaviorRuleAnomalousLocation` has a `Settings` field of type `BehaviorRuleSettingsAnomalousLocation`.
+
+<ResponseField name="granularity" type="string" required>
+  The geographic granularity for anomaly detection. Accepted values: `LAT_LONG`, `CITY`, `SUBDIVISION`, `COUNTRY`.
+</ResponseField>
+
+<ResponseField name="radiusKilometers" type="integer">
+  Required when `granularity` is `LAT_LONG`. Radius in kilometers from the known coordinate. Requests within this radius are considered familiar.
+</ResponseField>
+
+<ResponseField name="maxEventsUsedForEvaluation" type="integer" default="20">
+  The maximum number of recent sign-in events Okta uses to build the user's location history.
+</ResponseField>
+
+<ResponseField name="minEventsNeededForEvaluation" type="integer" default="0">
+  The minimum number of sign-in events required before Okta evaluates a new location as anomalous. When set to `0`, Okta flags the first sign-in from a new location.
+</ResponseField>
+
+---
+
+### ANOMALOUS_DEVICE settings
+
+`BehaviorRuleAnomalousDevice` has a `Settings` field of type `BehaviorRuleSettingsAnomalousDevice`.
+
+<ResponseField name="maxEventsUsedForEvaluation" type="integer" default="20">
+  The maximum number of recent sign-in events used to build the user's known-device history.
+</ResponseField>
+
+<ResponseField name="minEventsNeededForEvaluation" type="integer" default="0">
+  The minimum number of sign-in events required before a new device is considered anomalous.
+</ResponseField>
+
+---
+
+### ANOMALOUS_IP settings
+
+`BehaviorRuleAnomalousIP` has a `Settings` field of type `BehaviorRuleSettingsAnomalousIP`.
+
+<ResponseField name="maxEventsUsedForEvaluation" type="integer" default="50">
+  The maximum number of recent sign-in events used to build the user's known-IP history.
+</ResponseField>
+
+<ResponseField name="minEventsNeededForEvaluation" type="integer" default="0">
+  The minimum number of sign-in events required before a new IP is considered anomalous.
+</ResponseField>
+
+---
+
+### VELOCITY settings
+
+`BehaviorRuleVelocity` has a `Settings` field of type `BehaviorRuleSettingsVelocity`.
+
+<ResponseField name="velocityKph" type="integer" required default="805">
+  Maximum travel speed in kilometers per hour (kph) between two consecutive sign-in locations. If the calculated speed exceeds this threshold, Okta flags the sign-in as anomalous. The default of `805` kph approximates the speed of a commercial aircraft.
+</ResponseField>

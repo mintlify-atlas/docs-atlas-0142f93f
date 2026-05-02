@@ -1,81 +1,133 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Get started with the Okta Go Management SDK"
+description: "Learn how to install the Okta Go SDK, initialize a client with your API credentials, and make your first Okta management API call in minutes."
 ---
 
-## Get started in three steps
+The Okta Go Management SDK lets you interact with the Okta Management API from server-side Go applications. This guide walks you through installing the SDK, creating a client, and making your first API call.
 
-Get your documentation site running locally and make your first customization.
+<Note>
+  You need an Okta organization and an API token to follow this guide. Sign up for a free [developer organization](https://developer.okta.com/signup) if you don't have one. Then follow the [API token guide](https://developer.okta.com/docs/api/getting_started/getting_a_token) to create a token.
+</Note>
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Install the SDK">
+    The SDK requires Go 1.24 or later and uses Go Modules. If your project doesn't have a `go.mod` file yet, initialize one first:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    go mod init your-module-name
+    ```
 
-### Step 2: Deploy your changes
+    Then add the SDK:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    go get github.com/okta/okta-sdk-golang/v6@latest
+    ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    This adds the SDK to your `go.mod` and downloads the package.
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Import the package">
+    Add the SDK import to your Go source file:
 
-### Step 3: Go live
+    ```go
+    import (
+        "context"
+        "fmt"
+        "github.com/okta/okta-sdk-golang/v6/okta"
+    )
+    ```
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Create a configuration and client">
+    Construct a `Configuration` using `okta.NewConfiguration`, then pass it to `okta.NewAPIClient`:
+
+    ```go
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+    ```
+
+    Replace `{yourOktaDomain}` with your Okta domain (for example, `dev-123456.okta.com`) and `{apiToken}` with the token you created.
+
+    <Tip>
+      Hard-coding credentials works for quick tests, but for real projects store them in environment variables or a YAML config file. See the [configuration guide](/configuration) for all options.
+    </Tip>
+  </Step>
+
+  <Step title="Make your first API call">
+    Once you have a client, call any API through the corresponding service field. The following examples show two common first calls.
+
+    <CodeGroup>
+
+    ```go Get a user
+    import (
+        "context"
+        "fmt"
+        "github.com/okta/okta-sdk-golang/v6/okta"
+    )
+
+    func main() {
+        config, err := okta.NewConfiguration(
+            okta.WithOrgUrl("https://{yourOktaDomain}"),
+            okta.WithToken("{apiToken}"),
+        )
+        if err != nil {
+            fmt.Printf("Error: %v\n", err)
+        }
+        client := okta.NewAPIClient(config)
+
+        user, resp, err := client.UserAPI.GetUser(context.Background(), "{UserId|Username|Email}").Execute()
+        if err != nil {
+            fmt.Printf("Error Getting User: %v\n", err)
+        }
+        fmt.Printf("User: %+v\n Response: %+v\n\n", user, resp)
+    }
+    ```
+
+    ```go List all users
+    import (
+        "context"
+        "fmt"
+        "github.com/okta/okta-sdk-golang/v6/okta"
+    )
+
+    func main() {
+        config, err := okta.NewConfiguration(
+            okta.WithOrgUrl("https://{yourOktaDomain}"),
+            okta.WithToken("{apiToken}"),
+        )
+        if err != nil {
+            fmt.Printf("Error: %v\n", err)
+        }
+        client := okta.NewAPIClient(config)
+
+        users, resp, err := client.UserAPI.ListUsers(context.Background()).Execute()
+        if err != nil {
+            fmt.Printf("Error Getting Users: %v\n", err)
+        }
+        fmt.Printf("Users: %+v\n Response: %+v\n\n", users, resp)
+        for index, user := range users {
+            fmt.Printf("User %d: %+v\n", index, user)
+        }
+    }
+    ```
+
+    </CodeGroup>
+
+    API methods are organized by endpoint. Users live under `client.UserAPI`, groups under `client.GroupAPI`, applications under `client.ApplicationAPI`, and so on. Every method accepts `context.Context` as its first argument — use `context.Background()` if you don't have a specific context, or `context.TODO()` as a placeholder.
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that you have a working client, explore what the SDK can do:
 
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+- **[Configuration](/configuration)** — load credentials from YAML, environment variables, or constructor options
+- **[Authentication](/authentication/api-token)** — switch to OAuth 2.0 with a private key for service-to-service use cases
+- **[Users guide](/guides/users)** — create, update, and manage user lifecycle
+- **[Pagination](/concepts/pagination)** — iterate through large result sets with `HasNextPage()` and `Next()`

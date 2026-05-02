@@ -1,0 +1,443 @@
+---
+title: "GroupAPI — Okta group management methods"
+description: "Reference for client.GroupAPI: methods to create, list, update groups, manage group membership, and work with group rules in the Go SDK."
+---
+
+The `GroupAPI` interface manages Okta groups of type `OKTA_GROUP`. App-sourced groups (such as Active Directory groups with type `APP_GROUP`) are synced by app import operations and cannot be created or have their memberships modified through this API. Alongside `GroupAPI`, the `GroupRuleAPI` manages dynamic membership rules and the `GroupOwnerAPI` manages group ownership assignments.
+
+## GroupAPI methods
+
+### AddGroup
+
+Creates a new group with the `OKTA_GROUP` type.
+
+```go
+func (a *GroupAPIService) AddGroup(ctx context.Context) ApiAddGroupRequest
+func (a *GroupAPIService) AddGroupExecute(r ApiAddGroupRequest) (*Group, *APIResponse, error)
+```
+
+<ParamField path="body" type="AddGroupRequest" required>
+  The group to create. Contains a `profile` field of type `OktaUserGroupProfile`.
+</ParamField>
+
+<ResponseField name="*Group" type="object">
+  The created group record, including its assigned `id`.
+</ResponseField>
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    cfg, _ := okta.NewConfiguration()
+    client := okta.NewAPIClient(cfg)
+
+    name := "Engineering"
+    description := "All engineering staff"
+
+    profile := okta.NewOktaUserGroupProfile()
+    profile.SetName(name)
+    profile.SetDescription(description)
+
+    body := okta.NewAddGroupRequest()
+    body.SetProfile(*profile)
+
+    group, _, err := client.GroupAPI.AddGroup(context.Background()).
+        Group(*body).
+        Execute()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("Created group:", group.GetId())
+}
+```
+
+---
+
+### GetGroup
+
+Retrieves a specific group by its `id`.
+
+```go
+func (a *GroupAPIService) GetGroup(ctx context.Context, groupId string) ApiGetGroupRequest
+func (a *GroupAPIService) GetGroupExecute(r ApiGetGroupRequest) (*Group, *APIResponse, error)
+```
+
+<ParamField path="groupId" type="string" required>
+  The `id` of the group.
+</ParamField>
+
+<ResponseField name="*Group" type="object">
+  The full group record.
+</ResponseField>
+
+```go
+group, _, err := client.GroupAPI.GetGroup(context.Background(), "00g1ab2cd3EF4GH5IJ6K").Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println(group.GetProfile().OktaUserGroupProfile.GetName())
+```
+
+---
+
+### ListGroups
+
+Lists all groups in the org with pagination. Supports filter, query, and search parameters.
+
+```go
+func (a *GroupAPIService) ListGroups(ctx context.Context) ApiListGroupsRequest
+func (a *GroupAPIService) ListGroupsExecute(r ApiListGroupsRequest) ([]Group, *APIResponse, error)
+```
+
+<ParamField path="q" type="string">
+  Finds groups whose name starts with the given string.
+</ParamField>
+
+<ParamField path="filter" type="string">
+  A filter expression. Supported properties: `id`, `lastMembershipUpdated`, `lastUpdated`, `type`.
+</ParamField>
+
+<ParamField path="search" type="string">
+  A SCIM filter expression. Searches across most group properties. Results may reflect an eventually consistent data source.
+</ParamField>
+
+<ParamField path="limit" type="int32">
+  Maximum number of results per page. Recommended value: 200 or fewer.
+</ParamField>
+
+<ParamField path="after" type="string">
+  Pagination cursor obtained from the `Link` response header.
+</ParamField>
+
+<ResponseField name="[]Group" type="array">
+  A slice of group objects matching the query.
+</ResponseField>
+
+```go
+groups, _, err := client.GroupAPI.ListGroups(context.Background()).
+    Q("Engineering").
+    Limit(50).
+    Execute()
+if err != nil {
+    panic(err)
+}
+for _, g := range groups {
+    fmt.Println(g.GetId(), g.GetProfile().OktaUserGroupProfile.GetName())
+}
+```
+
+---
+
+### ReplaceGroup
+
+Replaces the profile of an `OKTA_GROUP` type group. This is a full update (PUT); omitted profile properties are deleted.
+
+```go
+func (a *GroupAPIService) ReplaceGroup(ctx context.Context, groupId string) ApiReplaceGroupRequest
+func (a *GroupAPIService) ReplaceGroupExecute(r ApiReplaceGroupRequest) (*Group, *APIResponse, error)
+```
+
+<ParamField path="groupId" type="string" required>
+  The `id` of the group to replace.
+</ParamField>
+
+<ParamField path="body" type="Group" required>
+  The full replacement group object, including the profile.
+</ParamField>
+
+<Note>
+  Only groups of type `OKTA_GROUP` can have their profiles replaced through this API. Use app import operations for `APP_GROUP` groups.
+</Note>
+
+---
+
+### DeleteGroup
+
+Deletes a group of type `OKTA_GROUP` or `APP_GROUP` from the org.
+
+```go
+func (a *GroupAPIService) DeleteGroup(ctx context.Context, groupId string) ApiDeleteGroupRequest
+func (a *GroupAPIService) DeleteGroupExecute(r ApiDeleteGroupRequest) (*APIResponse, error)
+```
+
+<ParamField path="groupId" type="string" required>
+  The `id` of the group to delete.
+</ParamField>
+
+<Warning>
+  You cannot delete an `APP_GROUP` that is used in a group push mapping.
+</Warning>
+
+---
+
+## Group membership methods
+
+### AssignUserToGroup
+
+Assigns an existing user to an `OKTA_GROUP` type group.
+
+```go
+func (a *GroupAPIService) AssignUserToGroup(ctx context.Context, groupId string, userId string) ApiAssignUserToGroupRequest
+func (a *GroupAPIService) AssignUserToGroupExecute(r ApiAssignUserToGroupRequest) (*APIResponse, error)
+```
+
+<ParamField path="groupId" type="string" required>
+  The `id` of the group.
+</ParamField>
+
+<ParamField path="userId" type="string" required>
+  The Okta ID of the user to add.
+</ParamField>
+
+```go
+_, err := client.GroupAPI.AssignUserToGroup(
+    context.Background(),
+    "00g1ab2cd3EF4GH5IJ6K",
+    "00u1ab2cd3EF4GH5IJ6K",
+).Execute()
+if err != nil {
+    panic(err)
+}
+```
+
+---
+
+### UnassignUserFromGroup
+
+Removes a user from an `OKTA_GROUP` type group.
+
+```go
+func (a *GroupAPIService) UnassignUserFromGroup(ctx context.Context, groupId string, userId string) ApiUnassignUserFromGroupRequest
+func (a *GroupAPIService) UnassignUserFromGroupExecute(r ApiUnassignUserFromGroupRequest) (*APIResponse, error)
+```
+
+<ParamField path="groupId" type="string" required>
+  The `id` of the group.
+</ParamField>
+
+<ParamField path="userId" type="string" required>
+  The Okta ID of the user to remove.
+</ParamField>
+
+---
+
+### ListGroupUsers
+
+Lists all users that are members of a group.
+
+```go
+func (a *GroupAPIService) ListGroupUsers(ctx context.Context, groupId string) ApiListGroupUsersRequest
+func (a *GroupAPIService) ListGroupUsersExecute(r ApiListGroupUsersRequest) ([]User, *APIResponse, error)
+```
+
+<ParamField path="groupId" type="string" required>
+  The `id` of the group.
+</ParamField>
+
+<ParamField path="limit" type="int32">
+  Maximum number of users to return. The recommended page limit is 200.
+</ParamField>
+
+<ParamField path="after" type="string">
+  Pagination cursor.
+</ParamField>
+
+<ResponseField name="[]User" type="array">
+  A slice of user objects that are members of the group.
+</ResponseField>
+
+```go
+users, _, err := client.GroupAPI.ListGroupUsers(context.Background(), groupId).
+    Limit(200).
+    Execute()
+if err != nil {
+    panic(err)
+}
+for _, u := range users {
+    fmt.Println(u.GetProfile().GetEmail())
+}
+```
+
+---
+
+## GroupRuleAPI methods
+
+Group rules dynamically assign users to groups when their profile attributes match defined conditions. Rules are created in the `INACTIVE` state and must be activated explicitly. Access the `GroupRuleAPI` via `client.GroupRuleAPI`.
+
+### CreateGroupRule
+
+Creates a new group rule. The rule starts in `INACTIVE` status.
+
+```go
+func (a *GroupRuleAPIService) CreateGroupRule(ctx context.Context) ApiCreateGroupRuleRequest
+func (a *GroupRuleAPIService) CreateGroupRuleExecute(r ApiCreateGroupRuleRequest) (*GroupRule, *APIResponse, error)
+```
+
+<ParamField path="body" type="GroupRule" required>
+  The rule definition, including `name`, `conditions` (the filter expression), and `actions` (which groups to assign matching users to).
+</ParamField>
+
+<ResponseField name="*GroupRule" type="object">
+  The created rule with its assigned `id` and `INACTIVE` status.
+</ResponseField>
+
+```go
+groupId := "00g1ab2cd3EF4GH5IJ6K"
+
+rule := okta.NewGroupRule()
+rule.SetName("Add EMEA employees to EMEA group")
+
+// build conditions and actions using the GroupRule model
+// (refer to the okta.GroupRule type and its nested structures)
+
+created, _, err := client.GroupRuleAPI.CreateGroupRule(context.Background()).
+    GroupRule(*rule).
+    Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println("Rule created:", created.GetId())
+_ = groupId
+```
+
+---
+
+### ListGroupRules
+
+Lists all group rules for the org.
+
+```go
+func (a *GroupRuleAPIService) ListGroupRules(ctx context.Context) ApiListGroupRulesRequest
+func (a *GroupRuleAPIService) ListGroupRulesExecute(r ApiListGroupRulesRequest) ([]GroupRule, *APIResponse, error)
+```
+
+<ParamField path="limit" type="int32">
+  Maximum number of rules to return.
+</ParamField>
+
+<ParamField path="after" type="string">
+  Pagination cursor.
+</ParamField>
+
+<ResponseField name="[]GroupRule" type="array">
+  A slice of group rule objects.
+</ResponseField>
+
+---
+
+### ActivateGroupRule
+
+Activates a group rule. Only `INACTIVE` rules can be activated.
+
+```go
+func (a *GroupRuleAPIService) ActivateGroupRule(ctx context.Context, groupRuleId string) ApiActivateGroupRuleRequest
+func (a *GroupRuleAPIService) ActivateGroupRuleExecute(r ApiActivateGroupRuleRequest) (*APIResponse, error)
+```
+
+<ParamField path="groupRuleId" type="string" required>
+  The `id` of the group rule.
+</ParamField>
+
+```go
+_, err := client.GroupRuleAPI.ActivateGroupRule(context.Background(), ruleId).Execute()
+if err != nil {
+    panic(err)
+}
+```
+
+---
+
+### DeactivateGroupRule
+
+Deactivates an `ACTIVE` group rule. You must deactivate a rule before you can update or delete it.
+
+```go
+func (a *GroupRuleAPIService) DeactivateGroupRule(ctx context.Context, groupRuleId string) ApiDeactivateGroupRuleRequest
+func (a *GroupRuleAPIService) DeactivateGroupRuleExecute(r ApiDeactivateGroupRuleRequest) (*APIResponse, error)
+```
+
+---
+
+### DeleteGroupRule
+
+Deletes a specific group rule. The rule must be `INACTIVE`.
+
+```go
+func (a *GroupRuleAPIService) DeleteGroupRule(ctx context.Context, groupRuleId string) ApiDeleteGroupRuleRequest
+func (a *GroupRuleAPIService) DeleteGroupRuleExecute(r ApiDeleteGroupRuleRequest) (*APIResponse, error)
+```
+
+---
+
+### ReplaceGroupRule
+
+Fully replaces a group rule. Only rules with `INACTIVE` status can be updated; the `actions` section cannot be changed.
+
+```go
+func (a *GroupRuleAPIService) ReplaceGroupRule(ctx context.Context, groupRuleId string) ApiReplaceGroupRuleRequest
+func (a *GroupRuleAPIService) ReplaceGroupRuleExecute(r ApiReplaceGroupRuleRequest) (*GroupRule, *APIResponse, error)
+```
+
+---
+
+## GroupOwnerAPI
+
+The `GroupOwnerAPI` (`client.GroupOwnerAPI`) provides methods to list, assign, and delete group owners. Group owners can be users or groups.
+
+Key methods:
+
+- `ListGroupOwners(ctx, groupId)` — lists all owners of a group
+- `AssignGroupOwner(ctx, groupId)` — assigns a user or group as an owner
+- `DeleteGroupOwner(ctx, groupId, ownerId)` — removes an owner
+
+---
+
+## Model types
+
+### AddGroupRequest
+
+The request body for `AddGroup`.
+
+```go
+type AddGroupRequest struct {
+    Profile              *OktaUserGroupProfile  `json:"profile,omitempty"`
+    AdditionalProperties map[string]interface{}
+}
+```
+
+### OktaUserGroupProfile
+
+Profile for Okta-managed groups (not Active Directory imported groups). Supports custom attributes via `AdditionalProperties`.
+
+```go
+type OktaUserGroupProfile struct {
+    Name                 *string                `json:"name,omitempty"`        // group display name
+    Description          *string                `json:"description,omitempty"` // optional description
+    AdditionalProperties map[string]interface{}
+}
+```
+
+### Group
+
+The full group object returned by read and list operations.
+
+```go
+type Group struct {
+    Id                    *string        `json:"id,omitempty"`
+    Created               *time.Time     `json:"created,omitempty"`
+    LastUpdated           *time.Time     `json:"lastUpdated,omitempty"`
+    LastMembershipUpdated *time.Time     `json:"lastMembershipUpdated,omitempty"`
+    ObjectClass           []string       `json:"objectClass,omitempty"` // e.g. ["okta:user_group"]
+    Type                  *string        `json:"type,omitempty"`        // "OKTA_GROUP", "APP_GROUP", "BUILT_IN"
+    Profile               *GroupProfile  `json:"profile,omitempty"`
+    Embedded              *GroupEmbedded `json:"_embedded,omitempty"`
+    Links                 *GroupLinks    `json:"_links,omitempty"`
+    AdditionalProperties  map[string]interface{}
+}
+```

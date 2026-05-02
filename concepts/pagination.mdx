@@ -1,0 +1,78 @@
+---
+title: "Paginate list results in the Okta Go SDK"
+description: "Use HasNextPage() and Next() on the APIResponse object to walk through large paginated list results one page at a time in the Okta Go SDK."
+---
+
+List endpoints in the Okta API return a bounded set of results per request. When a result set is larger than the page limit, the API includes a `Link: rel="next"` header pointing to the next page. The SDK surfaces this through two methods on `*APIResponse`: `HasNextPage()` to check whether more results exist, and `Next()` to fetch them.
+
+## How pagination works
+
+Every list method returns three values: the result slice, an `*APIResponse`, and an error. The `*APIResponse` wraps the raw `*http.Response` and parses the `Link` header automatically. You use it to drive your pagination loop without ever constructing next-page URLs manually.
+
+```go
+// APIResponse methods relevant to pagination
+func (res *APIResponse) HasNextPage() bool
+func (res *APIResponse) Next(v interface{}) (*APIResponse, error)
+```
+
+`HasNextPage()` returns `true` when the response contains a `rel="next"` link. `Next()` issues the next GET request and decodes the response body into `v`, returning a fresh `*APIResponse` you can use for the following iteration.
+
+## Basic pagination example
+
+The README shows the core pattern for iterating one page at a time:
+
+```go
+users, resp, err := client.UserAPI.ListUsers(ctx, query)
+// Do something with your users until you run out of users to iterate.
+if resp.HasNextPage() {
+  var nextUserSet []okta.User
+  resp, err = resp.Next(&nextUserSet)
+}
+```
+
+## Iterating all pages in a loop
+
+For most production use cases you need to collect results across all pages. Use a `for` loop that continues as long as `HasNextPage()` returns `true`:
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func listAllUsers(client *okta.APIClient) ([]okta.User, error) {
+    ctx := context.Background()
+
+    users, resp, err := client.UserAPI.ListUsers(ctx).Execute()
+    if err != nil {
+        return nil, fmt.Errorf("initial list request failed: %w", err)
+    }
+
+    allUsers := make([]okta.User, 0, len(users))
+    allUsers = append(allUsers, users...)
+
+    for resp.HasNextPage() {
+        var nextPage []okta.User
+        resp, err = resp.Next(&nextPage)
+        if err != nil {
+            return nil, fmt.Errorf("fetching next page failed: %w", err)
+        }
+        allUsers = append(allUsers, nextPage...)
+    }
+
+    return allUsers, nil
+}
+```
+
+<Note>
+Always check `err` after each call to `resp.Next()`. A network failure or API error mid-iteration returns a non-nil error and a nil or partial response.
+</Note>
+
+## Reference
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `HasNextPage` | `func (res *APIResponse) HasNextPage() bool` | Returns `true` when a `rel="next"` link is present in the response `Link` header. |
+| `Next` | `func (res *APIResponse) Next(v interface{}) (*APIResponse, error)` | Fetches the next page and decodes it into `v`. Returns a new `*APIResponse` for chaining. |
+| `Self` | `func (res *APIResponse) Self() string` | Returns the `rel="self"` URL from the response `Link` header, if present. |

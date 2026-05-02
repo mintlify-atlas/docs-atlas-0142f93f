@@ -1,0 +1,201 @@
+---
+title: "Manage Okta groups with the Go SDK"
+description: "Create groups, assign users to groups, list group members, remove members, and manage dynamic group rules using the Okta Go SDK GroupAPI."
+---
+
+The `GroupAPI` and `GroupRuleAPI` let you organize users into groups, control group membership, and define rules that automatically assign users based on profile attribute conditions. Groups of the `OKTA_GROUP` type are managed through the SDK; groups imported from Active Directory (`APP_GROUP`) are read-only through these methods.
+
+## Add a group
+
+Use `AddGroup` with an `AddGroupRequest` to create a new Okta group. The group profile requires at minimum a `name`; `description` is optional.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    grpProfile := okta.NewOktaUserGroupProfile()
+    grpProfile.SetDescription("A group of developers")
+    grpProfile.SetName("Developers")
+    addGrpRequest := okta.AddGroupRequest{
+        Profile: grpProfile,
+    }
+
+    group, resp, err := client.GroupAPI.AddGroup(context.Background()).
+        Group(addGrpRequest).
+        Execute()
+    if err != nil {
+        fmt.Printf("Error creating group: %v\n", err)
+    }
+    fmt.Printf("Created Group: %+v\n Response: %+v\n\n", group, resp)
+}
+```
+
+## List groups
+
+`ListGroups` returns all groups in your org with pagination. You can narrow results using filter expressions, a `q` (name prefix search), or the `search` parameter.
+
+```go
+groups, resp, err := client.GroupAPI.ListGroups(context.Background()).Execute()
+if err != nil {
+    fmt.Printf("Error listing groups: %v\n", err)
+}
+for _, group := range groups {
+    fmt.Printf("Group: %+v\n", group)
+}
+```
+
+Use `.Filter()` to narrow the list. For example, to find groups by name:
+
+```go
+groups, resp, err := client.GroupAPI.ListGroups(context.Background()).
+    Q("Developers").
+    Execute()
+```
+
+## Assign a user to a group
+
+`AssignUserToGroup` requires both the group ID and the user ID. You can only assign users to groups of the `OKTA_GROUP` type.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    resp, err := client.GroupAPI.AssignUserToGroup(context.Background(), "{groupId}", "{userId}").Execute()
+    if err != nil {
+        fmt.Printf("Error adding user to group: %v\n", err)
+    }
+    fmt.Printf("Response: %+v\n\n", resp)
+}
+```
+
+## List group members
+
+`ListGroupUsers` returns all users that belong to a given group. The default page limit is high for historical reasons; the recommended `limit` is `200`.
+
+```go
+users, resp, err := client.GroupAPI.ListGroupUsers(context.Background(), "{groupId}").Execute()
+if err != nil {
+    fmt.Printf("Error listing group users: %v\n", err)
+}
+for _, user := range users {
+    fmt.Printf("User: %+v\n", user)
+}
+```
+
+## Remove a user from a group
+
+`UnassignUserFromGroup` removes the membership. As with assignment, this only works for `OKTA_GROUP` groups.
+
+```go
+resp, err := client.GroupAPI.UnassignUserFromGroup(context.Background(), "{groupId}", "{userId}").Execute()
+if err != nil {
+    fmt.Printf("Error removing user from group: %v\n", err)
+}
+```
+
+## Group rules
+
+Group rules automatically add users to a group when their profile matches a defined expression. Rules are created with an `INACTIVE` status and must be explicitly activated.
+
+### Create a rule
+
+```go
+groupRuleAction := okta.NewGroupRuleAction()
+groupAssignment := okta.NewGroupRuleGroupAssignment([]string{"{groupId}"})
+groupRuleAction.SetAssignUserToGroups(*groupAssignment)
+
+expressionType := "urn:okta:expression:1.0"
+expression := "user.department == \"Engineering\""
+groupRuleExpression := okta.NewGroupRuleExpression()
+groupRuleExpression.SetType(expressionType)
+groupRuleExpression.SetValue(expression)
+
+conditions := okta.NewGroupRuleConditions()
+conditions.SetExpression(*groupRuleExpression)
+
+rule := okta.NewGroupRule()
+rule.SetName("Assign engineering users")
+rule.SetType("group_rule")
+rule.SetActions(*groupRuleAction)
+rule.SetConditions(*conditions)
+
+createdRule, resp, err := client.GroupRuleAPI.CreateGroupRule(context.Background()).
+    GroupRule(*rule).
+    Execute()
+if err != nil {
+    fmt.Printf("Error creating group rule: %v\n", err)
+}
+fmt.Printf("Created rule: %+v\n", createdRule)
+```
+
+### Activate a rule
+
+Rules are inactive when created. Call `ActivateGroupRule` with the rule ID to start evaluating it.
+
+```go
+resp, err := client.GroupRuleAPI.ActivateGroupRule(context.Background(), *createdRule.Id).Execute()
+if err != nil {
+    fmt.Printf("Error activating group rule: %v\n", err)
+}
+```
+
+## Known issue: GroupProfile discriminator bug
+
+In v6.0.0, the generated code uses `anyOf` semantics instead of `oneOf` for the group profile discriminator. This causes the first matching type (`OktaActiveDirectoryGroupProfile`) to be selected even for standard Okta groups, because both profile types share `name` and `description` fields.
+
+**Workaround:** Check the `ObjectClass` field on the `Group` object to determine which profile pointer to use.
+
+```go
+func getGroupName(group *okta.Group) string {
+    if group == nil || group.Profile == nil {
+        return ""
+    }
+
+    objectClass := group.GetObjectClass()
+
+    if len(objectClass) > 0 {
+        switch objectClass[0] {
+        case "okta:user_group":
+            // Standard Okta group
+            if group.Profile.OktaUserGroupProfile != nil {
+                return group.Profile.OktaUserGroupProfile.GetName()
+            }
+        case "okta:windows_security_principal":
+            // Active Directory group
+            if group.Profile.OktaActiveDirectoryGroupProfile != nil {
+                return group.Profile.OktaActiveDirectoryGroupProfile.GetName()
+            }
+        }
+    }
+
+    return ""
+}
+```
+
+See [issue #551](https://github.com/okta/okta-sdk-golang/issues/551) for details and an alternative SDK patch approach.

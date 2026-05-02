@@ -1,0 +1,259 @@
+---
+title: "UserTypeAPI — Okta user type management"
+description: "Reference for client.UserTypeAPI: create and manage custom Okta user types and their associated schema definitions using the Go SDK."
+---
+
+The `UserTypeAPI` interface lets you create and manage custom user types in your Okta org. Every org has a built-in `default` user type. You can add up to nine additional types, each with its own associated schema. New user types inherit the current default schema at the time of creation; later changes to the default schema do not propagate to previously created types. Access the API via `client.UserTypeAPI`.
+
+## UserTypeAPI methods
+
+### CreateUserType
+
+Creates a new user type. The new type starts with the schema of the default type at creation time.
+
+```go
+func (a *UserTypeAPIService) CreateUserType(ctx context.Context) ApiCreateUserTypeRequest
+func (a *UserTypeAPIService) CreateUserTypeExecute(r ApiCreateUserTypeRequest) (*UserType, *APIResponse, error)
+```
+
+<ParamField path="body" type="UserType" required>
+  The user type definition. You must supply `name` and `displayName`. The `name` cannot be changed after creation.
+</ParamField>
+
+<ResponseField name="*UserType" type="object">
+  The created user type, including its system-assigned `id` and schema reference links.
+</ResponseField>
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    cfg, _ := okta.NewConfiguration()
+    client := okta.NewAPIClient(cfg)
+
+    userType := okta.NewUserType()
+    userType.SetName("contractor")
+    userType.SetDisplayName("Contractor")
+    userType.SetDescription("External contractors with limited profile attributes")
+
+    created, _, err := client.UserTypeAPI.CreateUserType(context.Background()).
+        UserType(*userType).
+        Execute()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("Created user type: %s (id: %s)\n", created.GetDisplayName(), created.GetId())
+}
+```
+
+---
+
+### GetUserType
+
+Retrieves a user type by its ID. Use the literal string `"default"` to retrieve the default user type.
+
+```go
+func (a *UserTypeAPIService) GetUserType(ctx context.Context, typeId string) ApiGetUserTypeRequest
+func (a *UserTypeAPIService) GetUserTypeExecute(r ApiGetUserTypeRequest) (*UserType, *APIResponse, error)
+```
+
+<ParamField path="typeId" type="string" required>
+  The user type ID, or `"default"` to fetch the default type.
+</ParamField>
+
+<ResponseField name="*UserType" type="object">
+  The user type record.
+</ResponseField>
+
+```go
+// Retrieve the default user type
+defaultType, _, err := client.UserTypeAPI.GetUserType(context.Background(), "default").Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println("Default type schema link:", defaultType.GetLinks())
+```
+
+---
+
+### ListUserTypes
+
+Lists all user types defined in the org, including the default type.
+
+```go
+func (a *UserTypeAPIService) ListUserTypes(ctx context.Context) ApiListUserTypesRequest
+func (a *UserTypeAPIService) ListUserTypesExecute(r ApiListUserTypesRequest) ([]UserType, *APIResponse, error)
+```
+
+<ResponseField name="[]UserType" type="array">
+  All user types in the org.
+</ResponseField>
+
+```go
+types, _, err := client.UserTypeAPI.ListUserTypes(context.Background()).Execute()
+if err != nil {
+    panic(err)
+}
+for _, t := range types {
+    fmt.Printf("%s — %s\n", t.GetName(), t.GetDisplayName())
+}
+```
+
+---
+
+### UpdateUserType
+
+Partially updates a user type. Only `displayName` and `description` can be modified; `name` is immutable.
+
+```go
+func (a *UserTypeAPIService) UpdateUserType(ctx context.Context, typeId string) ApiUpdateUserTypeRequest
+func (a *UserTypeAPIService) UpdateUserTypeExecute(r ApiUpdateUserTypeRequest) (*UserType, *APIResponse, error)
+```
+
+<ParamField path="typeId" type="string" required>
+  The user type ID.
+</ParamField>
+
+<ParamField path="body" type="UserTypePostRequest" required>
+  Fields to update. Accepts `displayName` and `description`.
+</ParamField>
+
+<ResponseField name="*UserType" type="object">
+  The updated user type.
+</ResponseField>
+
+```go
+patch := okta.NewUserTypePostRequest()
+patch.SetDisplayName("External Contractor")
+patch.SetDescription("Updated description for contractor type")
+
+updated, _, err := client.UserTypeAPI.UpdateUserType(context.Background(), typeId).
+    UserTypePostRequest(*patch).
+    Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println("Updated:", updated.GetDisplayName())
+```
+
+---
+
+### ReplaceUserType
+
+Fully replaces a user type. This is a PUT operation. The `name` field must be included in the body but cannot be changed; only `displayName` and `description` are updated.
+
+```go
+func (a *UserTypeAPIService) ReplaceUserType(ctx context.Context, typeId string) ApiReplaceUserTypeRequest
+func (a *UserTypeAPIService) ReplaceUserTypeExecute(r ApiReplaceUserTypeRequest) (*UserType, *APIResponse, error)
+```
+
+<ParamField path="typeId" type="string" required>
+  The user type ID.
+</ParamField>
+
+<ParamField path="body" type="UserType" required>
+  The full user type definition. `name` must match the existing value.
+</ParamField>
+
+<ResponseField name="*UserType" type="object">
+  The replaced user type.
+</ResponseField>
+
+---
+
+### DeleteUserType
+
+Permanently deletes a user type. You cannot delete the default user type or a type currently assigned to any users.
+
+```go
+func (a *UserTypeAPIService) DeleteUserType(ctx context.Context, typeId string) ApiDeleteUserTypeRequest
+func (a *UserTypeAPIService) DeleteUserTypeExecute(r ApiDeleteUserTypeRequest) (*APIResponse, error)
+```
+
+<ParamField path="typeId" type="string" required>
+  The user type ID to delete.
+</ParamField>
+
+<Warning>
+  You cannot delete the `default` user type or any type that is currently assigned to users. Reassign users to a different type before deleting.
+</Warning>
+
+```go
+_, err := client.UserTypeAPI.DeleteUserType(context.Background(), "otyt1ab2cd3EF4GH5IJ6K").Execute()
+if err != nil {
+    panic(err)
+}
+```
+
+---
+
+## Model types
+
+### UserType (model)
+
+The `UserType` model is used in two contexts: as the response from `UserTypeAPI` methods (full object with system-assigned fields), and as a reference embedded in `User` objects (containing only `id`).
+
+When returned by `UserTypeAPI`:
+
+```go
+type UserType struct {
+    // Unique ID assigned by Okta
+    Id *string `json:"id,omitempty"`
+    // Immutable machine-readable identifier set at creation
+    Name *string `json:"name,omitempty"`
+    // Human-readable display name (mutable)
+    DisplayName *string `json:"displayName,omitempty"`
+    // Optional description (mutable)
+    Description *string `json:"description,omitempty"`
+    // Timestamp when the type was created
+    Created *time.Time `json:"created,omitempty"`
+    // Timestamp when the type was last modified
+    LastUpdated *time.Time `json:"lastUpdated,omitempty"`
+    // ID of the admin who created the type
+    CreatedBy *string `json:"createdBy,omitempty"`
+    // ID of the admin who last modified the type
+    LastUpdatedBy *string `json:"lastUpdatedBy,omitempty"`
+    // Whether this is the org's default type
+    Default *bool `json:"default,omitempty"`
+    // HAL links, including a ref to the associated schema
+    Links *UserTypeLinks `json:"_links,omitempty"`
+    AdditionalProperties map[string]interface{}
+}
+```
+
+When embedded in a `User` object, only `id` is present:
+
+```go
+// Embedded in User to indicate which type the user belongs to
+type UserType struct {
+    Id *string `json:"id,omitempty"`
+}
+```
+
+To assign a user type when creating a user, populate the `Type` field of `CreateUserRequest`:
+
+```go
+typeRef := okta.NewCreateUserRequestType()
+typeRef.SetId("otyt1ab2cd3EF4GH5IJ6K")
+
+body := okta.NewCreateUserRequest(profile)
+body.SetType(*typeRef)
+```
+
+### UserTypePostRequest
+
+Used with `UpdateUserType`. Only `displayName` and `description` are accepted.
+
+```go
+type UserTypePostRequest struct {
+    DisplayName          *string `json:"displayName,omitempty"`
+    Description          *string `json:"description,omitempty"`
+    AdditionalProperties map[string]interface{}
+}
+```

@@ -1,0 +1,324 @@
+---
+title: "SchemaAPI — User and group schema customization"
+description: "Reference for client.SchemaAPI: retrieve and update Okta user schema and group schema definitions, including custom attributes, using the Go SDK."
+---
+
+The `SchemaAPI` interface lets you retrieve and modify the JSON schemas that define user and group profile structures in your Okta org. The user schema is composed of two sub-schemas: a `#base` sub-schema maintained by Okta and a `#custom` sub-schema where you define your own profile properties. The group schema follows the same pattern but applies uniformly to all groups (there is no per-group-type schema). Access the API via `client.SchemaAPI`.
+
+## UserSchema methods
+
+### GetUserSchema
+
+Retrieves the schema for a given user type. Pass `"default"` to retrieve the default user type schema.
+
+```go
+func (a *SchemaAPIService) GetUserSchema(ctx context.Context, schemaId string) ApiGetUserSchemaRequest
+func (a *SchemaAPIService) GetUserSchemaExecute(r ApiGetUserSchemaRequest) (*UserSchema, *APIResponse, error)
+```
+
+<ParamField path="schemaId" type="string" required>
+  The schema ID corresponding to a user type, or `"default"` to target the default user type.
+</ParamField>
+
+<ResponseField name="*UserSchema" type="object">
+  The full schema object, including `definitions.base` and `definitions.custom` sub-schemas.
+</ResponseField>
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    cfg, _ := okta.NewConfiguration()
+    client := okta.NewAPIClient(cfg)
+
+    schema, _, err := client.SchemaAPI.GetUserSchema(context.Background(), "default").Execute()
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("Schema title:", schema.GetTitle())
+    fmt.Println("Schema ID:", schema.GetId())
+}
+```
+
+---
+
+### UpdateUserProfile
+
+Updates a user schema by adding, modifying, or removing custom properties. This is a partial update — omitting a property in the request body leaves it unchanged. To remove a custom property, explicitly set it to `null`.
+
+```go
+func (a *SchemaAPIService) UpdateUserProfile(ctx context.Context, schemaId string) ApiUpdateUserProfileRequest
+func (a *SchemaAPIService) UpdateUserProfileExecute(r ApiUpdateUserProfileRequest) (*UserSchema, *APIResponse, error)
+```
+
+<ParamField path="schemaId" type="string" required>
+  The schema ID or `"default"`.
+</ParamField>
+
+<ParamField path="body" type="UserSchema" required>
+  The schema update. Populate the `definitions.custom.properties` map with the attributes to add or modify. Set a property value to `null` to remove it.
+</ParamField>
+
+<ResponseField name="*UserSchema" type="object">
+  The updated schema.
+</ResponseField>
+
+<Warning>
+  Limited changes are allowed to base profile properties. You can modify `permissions`, the nullability of `firstName` and `lastName`, and the `login` pattern. You cannot remove a base property that is used as a `matchAttribute` in a SAML2 IdP.
+</Warning>
+
+#### Adding a custom attribute
+
+The example below adds a string attribute called `employeeRegion` to the default user schema.
+
+```go
+// Build the custom attribute definition
+attr := okta.NewUserSchemaAttribute()
+attr.SetTitle("Employee Region")
+attr.SetType("string")
+attr.SetMutability("READ_WRITE")
+attrRequired := false
+attr.SetRequired(attrRequired)
+
+// Permissions: end users can read but not write; admins can read and write
+attr.SetPermissions([]okta.UserSchemaAttributePermission{
+    {Principal: okta.PtrString("SELF"), Action: okta.PtrString("READ_ONLY")},
+})
+
+// Wrap it in a schema update body.
+// The definitions.custom.properties key is the attribute's technical name.
+customProps := map[string]okta.UserSchemaAttribute{
+    "employeeRegion": *attr,
+}
+
+body := okta.NewUserSchema()
+defs := okta.NewUserSchemaDefinitions()
+customDef := okta.NewUserSchemaPublic()
+customDef.SetProperties(customProps)
+defs.SetCustom(*customDef)
+body.SetDefinitions(*defs)
+
+updated, _, err := client.SchemaAPI.UpdateUserProfile(context.Background(), "default").
+    UserSchema(*body).
+    Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println("Schema updated:", updated.GetTitle())
+```
+
+#### Removing a custom attribute
+
+Set the property to `null` in the `definitions.custom.properties` map. Because the Go SDK represents this through `AdditionalProperties`, assign a `nil` interface value for the key to remove:
+
+```go
+body := okta.NewUserSchema()
+defs := okta.NewUserSchemaDefinitions()
+customDef := okta.NewUserSchemaPublic()
+customDef.AdditionalProperties = map[string]interface{}{
+    "properties": map[string]interface{}{
+        "employeeRegion": nil,
+    },
+}
+defs.SetCustom(*customDef)
+body.SetDefinitions(*defs)
+
+client.SchemaAPI.UpdateUserProfile(context.Background(), "default").
+    UserSchema(*body).
+    Execute()
+```
+
+---
+
+## GroupSchema methods
+
+All groups in your org share a single group schema. Unlike user schemas, there is no per-group-type schema.
+
+### GetGroupSchema
+
+Retrieves the group schema.
+
+```go
+func (a *SchemaAPIService) GetGroupSchema(ctx context.Context) ApiGetGroupSchemaRequest
+func (a *SchemaAPIService) GetGroupSchemaExecute(r ApiGetGroupSchemaRequest) (*GroupSchema, *APIResponse, error)
+```
+
+<ResponseField name="*GroupSchema" type="object">
+  The group schema, including base and custom sub-schemas.
+</ResponseField>
+
+```go
+schema, _, err := client.SchemaAPI.GetGroupSchema(context.Background()).Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println("Group schema title:", schema.GetTitle())
+```
+
+---
+
+### UpdateGroupSchema
+
+Adds, modifies, or removes custom properties in the group schema. Okta does not currently support changing base group profile properties. Set a property to `null` to remove it.
+
+```go
+func (a *SchemaAPIService) UpdateGroupSchema(ctx context.Context) ApiUpdateGroupSchemaRequest
+func (a *SchemaAPIService) UpdateGroupSchemaExecute(r ApiUpdateGroupSchemaRequest) (*GroupSchema, *APIResponse, error)
+```
+
+<ParamField path="body" type="GroupSchema">
+  The schema update. Populate `definitions.custom.properties` with the attributes to add or modify.
+</ParamField>
+
+<ResponseField name="*GroupSchema" type="object">
+  The updated group schema.
+</ResponseField>
+
+```go
+attr := okta.NewGroupSchemaAttribute()
+attr.SetTitle("Cost Center")
+attr.SetType("string")
+attr.SetMutability("READ_WRITE")
+
+body := okta.NewGroupSchema()
+// Populate definitions similarly to the user schema example above.
+
+updated, _, err := client.SchemaAPI.UpdateGroupSchema(context.Background()).
+    GroupSchema(*body).
+    Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println("Group schema updated:", updated.GetTitle())
+```
+
+---
+
+## App user schema methods
+
+Every app in Okta has its own app user schema. All users assigned to a given app share that schema. The User Types feature does not extend to apps.
+
+### GetApplicationUserSchema
+
+Retrieves the default app user schema for an application.
+
+```go
+func (a *SchemaAPIService) GetApplicationUserSchema(ctx context.Context, appId string) ApiGetApplicationUserSchemaRequest
+func (a *SchemaAPIService) GetApplicationUserSchemaExecute(r ApiGetApplicationUserSchemaRequest) (*UserSchema, *APIResponse, error)
+```
+
+<ParamField path="appId" type="string" required>
+  The application ID.
+</ParamField>
+
+<ResponseField name="*UserSchema" type="object">
+  The app user schema.
+</ResponseField>
+
+---
+
+### UpdateApplicationUserProfile
+
+Updates the app user schema for an application. Supports adding, modifying, or removing custom profile properties, and changing nullability of base properties that allow it.
+
+```go
+func (a *SchemaAPIService) UpdateApplicationUserProfile(ctx context.Context, appId string) ApiUpdateApplicationUserProfileRequest
+func (a *SchemaAPIService) UpdateApplicationUserProfileExecute(r ApiUpdateApplicationUserProfileRequest) (*UserSchema, *APIResponse, error)
+```
+
+<ParamField path="appId" type="string" required>
+  The application ID.
+</ParamField>
+
+<ParamField path="body" type="UserSchema" required>
+  The schema update body.
+</ParamField>
+
+<ResponseField name="*UserSchema" type="object">
+  The updated app user schema.
+</ResponseField>
+
+---
+
+## Model types
+
+### UserSchema
+
+The top-level schema object returned by read and update operations.
+
+```go
+type UserSchema struct {
+    Schema      *string                `json:"$schema,omitempty"`   // JSON schema version URI
+    Id          *string                `json:"id,omitempty"`        // schema URI (unique identifier)
+    Name        *string                `json:"name,omitempty"`      // schema machine name
+    Title       *string                `json:"title,omitempty"`     // human-readable title
+    Type        *string                `json:"type,omitempty"`      // always "object"
+    Created     *string                `json:"created,omitempty"`
+    LastUpdated *string                `json:"lastUpdated,omitempty"`
+    Definitions *UserSchemaDefinitions `json:"definitions,omitempty"` // contains "base" and "custom"
+    Properties  *UserSchemaProperties  `json:"properties,omitempty"`  // top-level property refs
+    Links       *LinksSelf             `json:"_links,omitempty"`
+    AdditionalProperties map[string]interface{}
+}
+```
+
+### UserSchemaAttribute
+
+Defines a single attribute in a user or app user schema. Used when adding custom properties.
+
+```go
+type UserSchemaAttribute struct {
+    Title             *string                          `json:"title,omitempty"`       // display name in Profile Editor
+    Type              *string                          `json:"type,omitempty"`        // "string", "boolean", "number", "integer", "array"
+    Description       *string                          `json:"description,omitempty"`
+    Required          NullableBool                     `json:"required,omitempty"`    // whether the property is required
+    Mutability        *string                          `json:"mutability,omitempty"`  // "READ_WRITE", "READ_ONLY", "WRITE_ONLY", "IMMUTABLE"
+    Scope             *string                          `json:"scope,omitempty"`       // "NONE" or "SELF"
+    MinLength         NullableInt32                    `json:"minLength,omitempty"`   // for string types
+    MaxLength         NullableInt32                    `json:"maxLength,omitempty"`   // for string types
+    Pattern           *string                          `json:"pattern,omitempty"`     // regex for string types
+    Format            *string                          `json:"format,omitempty"`      // e.g. "uri", "date-time"
+    Enum              []GroupSchemaAttributeEnumInner  `json:"enum,omitempty"`        // allowed values
+    OneOf             []UserSchemaAttributeEnum        `json:"oneOf,omitempty"`       // display names for enum values
+    Permissions       []UserSchemaAttributePermission  `json:"permissions,omitempty"` // per-principal access
+    Unique            NullableBool                     `json:"unique,omitempty"`      // enforce uniqueness
+    Master            NullableUserSchemaAttributeMaster `json:"master,omitempty"`
+    Default           interface{}                      `json:"default,omitempty"`     // default value
+    ExternalName      *string                          `json:"externalName,omitempty"`
+    ExternalNamespace *string                          `json:"externalNamespace,omitempty"`
+    AdditionalProperties map[string]interface{}
+}
+```
+
+### How custom attributes work
+
+Custom attributes are defined under `definitions.custom.properties` in the schema update body. The key is the attribute's technical name (used in `UserProfile.AdditionalProperties`), and the value is a `UserSchemaAttribute` object describing the attribute's type, constraints, and permissions.
+
+Once an attribute is added to the schema, you can set it on any user's profile using `AdditionalProperties`:
+
+```go
+profile := okta.NewUserProfile()
+profile.SetLogin("jane@example.com")
+profile.SetEmail("jane@example.com")
+profile.SetFirstName("Jane")
+profile.SetLastName("Doe")
+
+// Set the custom "employeeRegion" attribute defined in the schema
+profile.AdditionalProperties = map[string]interface{}{
+    "employeeRegion": "EMEA",
+}
+
+body := okta.NewCreateUserRequest(*profile)
+user, _, err := client.UserAPI.CreateUser(context.Background()).
+    Body(*body).
+    Activate(true).
+    Execute()
+```
+
+Custom attributes can contain HTML. Always escape or encode this data before displaying it to prevent cross-site scripting.

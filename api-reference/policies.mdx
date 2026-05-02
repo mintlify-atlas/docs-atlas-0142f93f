@@ -1,0 +1,447 @@
+---
+title: "PolicyAPI — Okta policy and rule management"
+description: "Reference for client.PolicyAPI: list, create, and manage Okta policies (sign-on, password, enrollment) and their rules using the Go SDK."
+---
+
+The `PolicyAPI` provides full lifecycle management for Okta policies and their associated rules. Policies control authentication, password requirements, MFA enrollment, and profile enrollment behavior across your Okta org. Each policy contains one or more rules that define the specific conditions and actions that apply to a matched user or session.
+
+## Policy types
+
+Okta supports the following policy types. You pass the type string when creating a policy or filtering with `ListPolicies`.
+
+| Type | Description |
+|------|-------------|
+| `OKTA_SIGN_ON` | Controls sign-on behavior including session lifetime and authentication requirements |
+| `PASSWORD` | Defines password complexity, lockout, and recovery rules |
+| `MFA_ENROLL` | Controls which authenticators users must or may enroll |
+| `PROFILE_ENROLLMENT` | Governs how users are enrolled and what profile attributes are collected |
+| `ACCESS_POLICY` | Identity Engine policy controlling access to apps (Okta Identity Engine only) |
+| `IDP_DISCOVERY` | Routes users to the correct identity provider during sign-in |
+| `ENTITY_RISK` | Applies actions based on entity risk signals (Okta Identity Engine only) |
+
+## Access the API
+
+```go
+client, err := okta.NewClient(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+policyAPI := client.PolicyAPI
+```
+
+---
+
+## ListPolicies
+
+Lists all policies. Use the `Type_` query option to filter by policy type.
+
+```go
+func (a *PolicyAPIService) ListPolicies(ctx context.Context) ApiListPoliciesRequest
+func (a *PolicyAPIService) ListPoliciesExecute(r ApiListPoliciesRequest) ([]ListPolicies200ResponseInner, *APIResponse, error)
+```
+
+### Query options
+
+<ParamField path="query.Type_" type="string">
+  Filters policies by type. One of `OKTA_SIGN_ON`, `PASSWORD`, `MFA_ENROLL`, `PROFILE_ENROLLMENT`, `ACCESS_POLICY`, `IDP_DISCOVERY`, `ENTITY_RISK`, `POST_AUTH_SESSION`, `DEVICE_SIGNAL_COLLECTION`, or `CLIENT_UPDATE`.
+</ParamField>
+
+<ParamField path="query.Status" type="string">
+  Filters policies by status. Use `ACTIVE` or `INACTIVE`.
+</ParamField>
+
+<ParamField path="query.Q" type="string">
+  Filters policies by name prefix (startsWith match).
+</ParamField>
+
+<ParamField path="query.Expand" type="string">
+  Expands embedded objects in the response. Use `rules` to include policy rules inline.
+</ParamField>
+
+<ParamField path="query.Limit" type="string">
+  Maximum number of policies to return. See Okta pagination documentation.
+</ParamField>
+
+<ParamField path="query.After" type="string">
+  End-page cursor for paginating through results.
+</ParamField>
+
+### Returns
+
+<ResponseField name="[]ListPolicies200ResponseInner" type="object[]">
+  A list of policy objects. Each element is a discriminated union that resolves to the concrete policy type (for example, `OktaSignOnPolicy`, `PasswordPolicy`, `MultifactorEnrollmentPolicy`).
+</ResponseField>
+
+### Example: list all sign-on policies
+
+```go
+policies, resp, err := client.PolicyAPI.
+    ListPolicies(ctx).
+    Type_("OKTA_SIGN_ON").
+    Execute()
+if err != nil {
+    log.Fatalf("ListPolicies error: %v", err)
+}
+
+for _, p := range policies {
+    if sp := p.OktaSignOnPolicy; sp != nil {
+        fmt.Printf("Policy: %s (id=%s, status=%s)\n",
+            sp.GetName(), sp.GetId(), sp.GetStatus())
+    }
+}
+_ = resp
+```
+
+---
+
+## GetPolicy
+
+Retrieves a single policy by its ID.
+
+```go
+func (a *PolicyAPIService) GetPolicy(ctx context.Context, policyId string) ApiGetPolicyRequest
+func (a *PolicyAPIService) GetPolicyExecute(r ApiGetPolicyRequest) (*ListPolicies200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy to retrieve.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListPolicies200ResponseInner" type="object">
+  The policy object. Inspect the concrete type (for example, `.PasswordPolicy`) to access type-specific fields.
+</ResponseField>
+
+---
+
+## CreatePolicy
+
+Creates a new policy. The request body must include `type` and `name`.
+
+```go
+func (a *PolicyAPIService) CreatePolicy(ctx context.Context) ApiCreatePolicyRequest
+func (a *PolicyAPIService) CreatePolicyExecute(r ApiCreatePolicyRequest) (*CreatePolicyRequest, *APIResponse, error)
+```
+
+### Query options
+
+<ParamField path="query.Activate" type="boolean" default="true">
+  When `true`, activates the policy immediately after creation.
+</ParamField>
+
+### Request body options
+
+<ParamField path="body.Policy" type="object" required>
+  A policy object. Must include `name` (string) and `type` (string). Provide additional type-specific fields depending on the policy variant you are creating.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*CreatePolicyRequest" type="object">
+  The created policy object.
+</ResponseField>
+
+### Example: create a password policy
+
+```go
+import "github.com/okta/okta-sdk-golang/v6/okta"
+
+name := "Corporate Password Policy"
+policyType := "PASSWORD"
+
+policy := okta.ListPolicies200ResponseInner{
+    PasswordPolicy: &okta.PasswordPolicy{
+        Policy: okta.Policy{
+            Name: name,
+            Type: policyType,
+        },
+    },
+}
+
+created, resp, err := client.PolicyAPI.
+    CreatePolicy(ctx).
+    Policy(policy).
+    Activate(true).
+    Execute()
+if err != nil {
+    log.Fatalf("CreatePolicy error: %v", err)
+}
+fmt.Printf("Created policy id: %s\n", created.PasswordPolicy.GetId())
+_ = resp
+```
+
+---
+
+## ReplacePolicy
+
+Replaces (fully updates) a policy identified by `policyId`. Use this method to change the policy configuration; it replaces all fields not included in the request with their defaults.
+
+```go
+func (a *PolicyAPIService) ReplacePolicy(ctx context.Context, policyId string) ApiReplacePolicyRequest
+func (a *PolicyAPIService) ReplacePolicyExecute(r ApiReplacePolicyRequest) (*ListPolicies200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy to replace.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListPolicies200ResponseInner" type="object">
+  The updated policy.
+</ResponseField>
+
+---
+
+## DeletePolicy
+
+Permanently deletes a policy and all its rules. Only inactive policies can be deleted.
+
+```go
+func (a *PolicyAPIService) DeletePolicy(ctx context.Context, policyId string) ApiDeletePolicyRequest
+func (a *PolicyAPIService) DeletePolicyExecute(r ApiDeletePolicyRequest) (*APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy to delete. The policy must have status `INACTIVE`.
+</ParamField>
+
+---
+
+## ActivatePolicy
+
+Activates an inactive policy.
+
+```go
+func (a *PolicyAPIService) ActivatePolicy(ctx context.Context, policyId string) ApiActivatePolicyRequest
+func (a *PolicyAPIService) ActivatePolicyExecute(r ApiActivatePolicyRequest) (*APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy to activate.
+</ParamField>
+
+---
+
+## DeactivatePolicy
+
+Deactivates an active policy. You must deactivate a policy before you can delete it.
+
+```go
+func (a *PolicyAPIService) DeactivatePolicy(ctx context.Context, policyId string) ApiDeactivatePolicyRequest
+func (a *PolicyAPIService) DeactivatePolicyExecute(r ApiDeactivatePolicyRequest) (*APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy to deactivate.
+</ParamField>
+
+---
+
+## ClonePolicy
+
+Creates a copy of an existing policy including all of its rules.
+
+```go
+func (a *PolicyAPIService) ClonePolicy(ctx context.Context, policyId string) ApiClonePolicyRequest
+func (a *PolicyAPIService) ClonePolicyExecute(r ApiClonePolicyRequest) (*ListPolicies200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy to clone.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListPolicies200ResponseInner" type="object">
+  The newly created clone of the policy.
+</ResponseField>
+
+---
+
+## Policy rule methods
+
+Rules define the conditions and actions that apply within a policy. Each policy has a prioritized list of rules evaluated in order.
+
+<Note>
+  You cannot create additional rules for `PROFILE_ENROLLMENT`, `POST_AUTH_SESSION`, or `CLIENT_UPDATE` policies.
+</Note>
+
+### ListPolicyRules
+
+Lists all rules for a policy.
+
+```go
+func (a *PolicyAPIService) ListPolicyRules(ctx context.Context, policyId string) ApiListPolicyRulesRequest
+func (a *PolicyAPIService) ListPolicyRulesExecute(r ApiListPolicyRulesRequest) ([]ListPolicyRules200ResponseInner, *APIResponse, error)
+```
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy whose rules you want to list.
+</ParamField>
+
+<ResponseField name="[]ListPolicyRules200ResponseInner" type="object[]">
+  A list of policy rule objects for the given policy.
+</ResponseField>
+
+### GetPolicyRule
+
+Retrieves a specific rule within a policy.
+
+```go
+func (a *PolicyAPIService) GetPolicyRule(ctx context.Context, policyId string, ruleId string) ApiGetPolicyRuleRequest
+func (a *PolicyAPIService) GetPolicyRuleExecute(r ApiGetPolicyRuleRequest) (*ListPolicyRules200ResponseInner, *APIResponse, error)
+```
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy.
+</ParamField>
+
+<ParamField path="path.ruleId" type="string" required>
+  The `id` of the rule.
+</ParamField>
+
+### CreatePolicyRule
+
+Creates a new rule within a policy.
+
+```go
+func (a *PolicyAPIService) CreatePolicyRule(ctx context.Context, policyId string) ApiCreatePolicyRuleRequest
+func (a *PolicyAPIService) CreatePolicyRuleExecute(r ApiCreatePolicyRuleRequest) (*ListPolicyRules200ResponseInner, *APIResponse, error)
+```
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy to add the rule to.
+</ParamField>
+
+### ReplacePolicyRule
+
+Replaces a rule within a policy. This is a full replacement of all rule fields.
+
+```go
+func (a *PolicyAPIService) ReplacePolicyRule(ctx context.Context, policyId string, ruleId string) ApiReplacePolicyRuleRequest
+func (a *PolicyAPIService) ReplacePolicyRuleExecute(r ApiReplacePolicyRuleRequest) (*ListPolicyRules200ResponseInner, *APIResponse, error)
+```
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy.
+</ParamField>
+
+<ParamField path="path.ruleId" type="string" required>
+  The `id` of the rule to replace.
+</ParamField>
+
+### DeletePolicyRule
+
+Deletes a rule from a policy. You cannot delete system rules (`system=true`).
+
+```go
+func (a *PolicyAPIService) DeletePolicyRule(ctx context.Context, policyId string, ruleId string) ApiDeletePolicyRuleRequest
+func (a *PolicyAPIService) DeletePolicyRuleExecute(r ApiDeletePolicyRuleRequest) (*APIResponse, error)
+```
+
+<ParamField path="path.policyId" type="string" required>
+  The `id` of the policy.
+</ParamField>
+
+<ParamField path="path.ruleId" type="string" required>
+  The `id` of the rule to delete.
+</ParamField>
+
+### ActivatePolicyRule
+
+Activates a policy rule.
+
+```go
+func (a *PolicyAPIService) ActivatePolicyRule(ctx context.Context, policyId string, ruleId string) ApiActivatePolicyRuleRequest
+func (a *PolicyAPIService) ActivatePolicyRuleExecute(r ApiActivatePolicyRuleRequest) (*APIResponse, error)
+```
+
+### DeactivatePolicyRule
+
+Deactivates a policy rule.
+
+```go
+func (a *PolicyAPIService) DeactivatePolicyRule(ctx context.Context, policyId string, ruleId string) ApiDeactivatePolicyRuleRequest
+func (a *PolicyAPIService) DeactivatePolicyRuleExecute(r ApiDeactivatePolicyRuleRequest) (*APIResponse, error)
+```
+
+---
+
+## Policy model fields
+
+The `Policy` base type contains the following fields. Concrete policy types embed `Policy` and add type-specific settings.
+
+<ResponseField name="id" type="string">
+  Unique identifier for the policy. Read-only; set by Okta on creation.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable name for the policy.
+</ResponseField>
+
+<ResponseField name="type" type="string" required>
+  The policy type. See [Policy types](#policy-types) above.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `ACTIVE` or `INACTIVE`. Use the activate/deactivate endpoints to change status.
+</ResponseField>
+
+<ResponseField name="priority" type="integer">
+  Evaluation order relative to other policies of the same type. Lower values are evaluated first.
+</ResponseField>
+
+<ResponseField name="system" type="boolean">
+  `true` for Okta-managed system policies that cannot be deleted. Default is `false`.
+</ResponseField>
+
+<ResponseField name="created" type="string">
+  ISO 8601 timestamp of when the policy was created.
+</ResponseField>
+
+<ResponseField name="lastUpdated" type="string">
+  ISO 8601 timestamp of the most recent modification.
+</ResponseField>
+
+---
+
+## PolicyRule model fields
+
+<ResponseField name="id" type="string">
+  Unique identifier for the rule.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable name for the rule.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  The rule type, which is specific to the parent policy type.
+</ResponseField>
+
+<ResponseField name="priority" type="integer">
+  Evaluation order within the policy. Rules with lower priority numbers are evaluated first.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `ACTIVE` or `INACTIVE`.
+</ResponseField>
+
+<ResponseField name="system" type="boolean">
+  `true` for system-managed rules that cannot be deleted.
+</ResponseField>

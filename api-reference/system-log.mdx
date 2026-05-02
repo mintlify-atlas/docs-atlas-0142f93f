@@ -1,0 +1,240 @@
+---
+title: "SystemLogAPI — Query the Okta system log"
+description: "Reference for client.SystemLogAPI: query the Okta system audit log by time range, filter, and event type to retrieve LogEvent records in Go."
+---
+
+The `SystemLogAPI` provides access to Okta's system audit log, which records every significant action taken in your org—sign-in attempts, admin changes, app assignments, policy evaluations, and more. You call `ListLogEvents` to retrieve `LogEvent` records and use query parameters to narrow results by time window, keyword, or a structured filter expression. By default the API returns up to 100 events; use the `limit` parameter or follow the `next` link header to retrieve more.
+
+Accessed via `client.SystemLogAPI()`. The underlying endpoint is `GET /api/v1/logs`.
+
+---
+
+## ListLogEvents
+
+Lists all system log events, optionally filtered by time range, keyword, or expression.
+
+```go
+func (a *SystemLogAPIService) ListLogEvents(ctx context.Context) ApiListLogEventsRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context for authentication, cancellation, and deadlines.
+</ParamField>
+
+**Returns** `([]LogEvent, *APIResponse, error)`
+
+### Query parameters
+
+Chain these methods on the `ApiListLogEventsRequest` before calling `.Execute()`.
+
+<ParamField query="since" type="string">
+  Filters the lower time bound of the log events `published` property for bounded queries, or the persistence time for polling queries. Use an ISO 8601 timestamp, for example `2024-01-01T00:00:00Z`.
+</ParamField>
+
+<ParamField query="until" type="string">
+  Filters the upper time bound. Same format as `since`. Omit to return events up to the current time.
+</ParamField>
+
+<ParamField query="after" type="string">
+  Cursor for the next page of results. Okta returns a `Link: <url>; rel="next"` header whose URL contains this value. Pass it verbatim to retrieve the subsequent page.
+</ParamField>
+
+<ParamField query="filter" type="string">
+  An [Okta filter expression](https://developer.okta.com/docs/api/#filter) that narrows results. Supports operators `eq`, `ne`, `lt`, `gt`, `le`, `ge`, `and`, `or`, `not`, and `pr`. Does not support the `[]` (array) operator.
+</ParamField>
+
+<ParamField query="q" type="string">
+  One or more case-insensitive keywords. Okta searches across actor name, target display names, event type, and other string fields.
+</ParamField>
+
+<ParamField query="limit" type="int32" default="100">
+  Maximum number of events to return per page. The API accepts values up to 1000.
+</ParamField>
+
+<ParamField query="sortOrder" type="string" default="ASCENDING">
+  Sort direction for the `published` timestamp. Accepted values: `ASCENDING`, `DESCENDING`.
+</ParamField>
+
+---
+
+## LogEvent model
+
+Each element in the returned slice is a `LogEvent` struct. All fields are optional pointers.
+
+<ResponseField name="uuid" type="string">
+  Unique identifier for this individual event.
+</ResponseField>
+
+<ResponseField name="published" type="time.Time">
+  Timestamp when the event was published.
+</ResponseField>
+
+<ResponseField name="eventType" type="string">
+  The event type string that identifies the action. For example, `user.session.start` or `policy.lifecycle.update`. See the [Event Types catalog](https://developer.okta.com/docs/reference/api/event-types/#catalog) for a full list.
+</ResponseField>
+
+<ResponseField name="displayMessage" type="string">
+  Human-readable description of the event.
+</ResponseField>
+
+<ResponseField name="severity" type="string">
+  How severe the event is. Values include `DEBUG`, `INFO`, `WARN`, and `ERROR`.
+</ResponseField>
+
+<ResponseField name="legacyEventType" type="string">
+  The corresponding `objectType` value from the older Events API, provided for backward compatibility.
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Versioning indicator for the event schema.
+</ResponseField>
+
+<ResponseField name="actor" type="object">
+  The entity that performed the action.
+  <Expandable title="LogActor fields">
+    <ResponseField name="id" type="string">Unique identifier of the actor.</ResponseField>
+    <ResponseField name="type" type="string">Actor type, for example `User` or `SystemPrincipal`.</ResponseField>
+    <ResponseField name="alternateId" type="string">Secondary identifier such as a login or email.</ResponseField>
+    <ResponseField name="displayName" type="string">Human-readable actor name.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="target" type="object[]">
+  One or more entities that the actor acted upon. Search by `type` rather than by array index, because target ordering is not guaranteed across event types.
+  <Expandable title="LogTarget fields">
+    <ResponseField name="id" type="string">Unique identifier of the target.</ResponseField>
+    <ResponseField name="type" type="string">Target type, for example `User`, `AppInstance`, or `Policy`.</ResponseField>
+    <ResponseField name="alternateId" type="string">Secondary identifier such as a login or email.</ResponseField>
+    <ResponseField name="displayName" type="string">Human-readable target name.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="outcome" type="object">
+  Result of the event.
+  <Expandable title="LogOutcome fields">
+    <ResponseField name="result" type="string">Outcome result value, for example `SUCCESS`, `FAILURE`, `SKIPPED`, or `UNKNOWN`.</ResponseField>
+    <ResponseField name="reason" type="string">Human-readable reason for the outcome.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="authenticationContext" type="object">
+  Details about the authentication that was in effect when the event occurred.
+  <Expandable title="LogAuthenticationContext fields">
+    <ResponseField name="authenticationStep" type="int32">Step number within a multi-step authentication flow.</ResponseField>
+    <ResponseField name="externalSessionId" type="string">Identifier for the external session if SSO is involved.</ResponseField>
+    <ResponseField name="interface" type="string">The interface used to authenticate, for example `UI` or `API`.</ResponseField>
+    <ResponseField name="issuer" type="object">Token issuer information when the authentication involved a token.</ResponseField>
+    <ResponseField name="credentialProvider" type="string">The credential provider used.</ResponseField>
+    <ResponseField name="credentialType" type="string">The credential type used.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="securityContext" type="object">
+  Information about the network and threat context of the event.
+  <Expandable title="LogSecurityContext fields">
+    <ResponseField name="asNumber" type="int32">Autonomous system number of the client IP.</ResponseField>
+    <ResponseField name="asOrg" type="string">Organization that owns the autonomous system.</ResponseField>
+    <ResponseField name="domain" type="string">Domain name associated with the client IP.</ResponseField>
+    <ResponseField name="isProxy" type="bool">Whether the request came through a known proxy.</ResponseField>
+    <ResponseField name="isp" type="string">Internet service provider of the client IP.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="debugContext" type="object">
+  Additional debugging data specific to the event type.
+  <Expandable title="LogDebugContext fields">
+    <ResponseField name="debugData" type="map[string]interface{}">Arbitrary key-value pairs with event-specific debugging information.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="client" type="object">
+  Information about the client that initiated the event.
+</ResponseField>
+
+<ResponseField name="request" type="object">
+  HTTP request details including IP addresses.
+</ResponseField>
+
+<ResponseField name="transaction" type="object">
+  Transaction context such as a shared request ID.
+</ResponseField>
+
+---
+
+## Filter expressions
+
+Use the `filter` parameter with [Okta filter syntax](https://developer.okta.com/docs/api/#filter) to scope results precisely. Common patterns:
+
+| Goal | Filter expression |
+|---|---|
+| Events of a specific type | `eventType eq "user.session.start"` |
+| Events for a specific user | `actor.id eq "00u1abc2defGHIJK"` |
+| Failed outcomes only | `outcome.result eq "FAILURE"` |
+| Events from a specific IP | `client.ipAddress eq "203.0.113.42"` |
+
+<Note>
+  `filter` and `q` cannot be used in the same request. Use `filter` for structured queries and `q` for keyword searches.
+</Note>
+
+---
+
+## Pagination pattern
+
+`ListLogEvents` returns a flat slice for the current page. When there are more events, the `APIResponse` object carries an HTTP `Link` header with a `rel="next"` URL. Extract the `after` cursor from that URL and pass it to the next call.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strings"
+
+	okta "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+	cfg, err := okta.NewConfiguration()
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := okta.NewAPIClient(cfg)
+	ctx := context.Background()
+
+	req := client.SystemLogAPI().
+		ListLogEvents(ctx).
+		Since("2024-01-01T00:00:00Z").
+		Until("2024-01-02T00:00:00Z").
+		Filter(`eventType eq "user.session.start"`).
+		Limit(200)
+
+	for {
+		events, resp, err := req.Execute()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for _, e := range events {
+			fmt.Printf("[%s] %s — %s\n",
+				e.Published.Format("2006-01-02 15:04:05"),
+				*e.EventType,
+				*e.DisplayMessage,
+			)
+		}
+
+		// Follow the next link if present
+		nextLink := resp.Header.Get("Link")
+		if !strings.Contains(nextLink, `rel="next"`) {
+			break
+		}
+		// Parse the `after` cursor from the Link header and set it on the request
+		// (parsing logic omitted for brevity)
+		break
+	}
+}
+```
+
+<Tip>
+  For continuous log streaming, omit `until` and use the `after` cursor from each response. Okta preserves the cursor so you can resume polling after a pause.
+</Tip>

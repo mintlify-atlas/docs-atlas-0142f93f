@@ -1,0 +1,509 @@
+---
+title: "AuthorizationServerAPI — OAuth 2.0 server management"
+description: "Reference for client.AuthorizationServerAPI and related APIs: manage OAuth 2.0 authorization servers, scopes, claims, and policies in Go."
+---
+
+The `AuthorizationServerAPI` and its companion interfaces (`AuthorizationServerScopesAPI`, `AuthorizationServerClaimsAPI`, `AuthorizationServerPoliciesAPI`, and `AuthorizationServerKeysAPI`) provide complete control over custom OAuth 2.0 authorization servers in Okta. Use them to create and configure authorization servers, define token scopes and claims, manage access policies, and rotate signing keys. All methods follow the builder pattern: call the method, chain any optional parameters, then call `.Execute()`.
+
+## AuthorizationServerAPI
+
+### `ListAuthorizationServers`
+
+```go
+func (a *AuthorizationServerAPIService) ListAuthorizationServers(ctx context.Context) ApiListAuthorizationServersRequest
+```
+
+Lists all custom authorization servers configured in the org.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context for deadlines, cancellation, and authentication.
+</ParamField>
+
+**Optional chained parameters:**
+
+<ParamField path=".Q(q string)" type="string">
+  Searches the `name` field for a case-insensitive match.
+</ParamField>
+
+<ParamField path=".Limit(limit int32)" type="int32">
+  Maximum number of results per page.
+</ParamField>
+
+<ParamField path=".After(after string)" type="string">
+  Cursor for the next page of results.
+</ParamField>
+
+<ResponseField name="[]AuthorizationServer" type="slice" required>
+  A slice of authorization server objects.
+</ResponseField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+```go
+import (
+    "fmt"
+    "context"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    servers, resp, err := client.AuthorizationServerAPI.ListAuthorizationServers(context.Background()).Execute()
+    if err != nil {
+        fmt.Printf("Error listing authorization servers: %v\n", err)
+    }
+    fmt.Printf("Servers: %+v\n Response: %+v\n\n", servers, resp)
+}
+```
+
+---
+
+### `GetAuthorizationServer`
+
+```go
+func (a *AuthorizationServerAPIService) GetAuthorizationServer(ctx context.Context, authServerId string) ApiGetAuthorizationServerRequest
+```
+
+Retrieves a specific authorization server by its ID.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server.
+</ParamField>
+
+<ResponseField name="*AuthorizationServer" type="object" required>
+  The authorization server including its `name`, `description`, `audiences`, and `issuer`.
+</ResponseField>
+
+```go
+server, resp, err := client.AuthorizationServerAPI.
+    GetAuthorizationServer(context.Background(), "{authServerId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error getting authorization server: %v\n", err)
+}
+fmt.Printf("Server: %+v\n Response: %+v\n\n", server, resp)
+```
+
+---
+
+### `CreateAuthorizationServer`
+
+```go
+func (a *AuthorizationServerAPIService) CreateAuthorizationServer(ctx context.Context) ApiCreateAuthorizationServerRequest
+```
+
+Creates a new custom authorization server.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".AuthorizationServer(authorizationServer AuthorizationServer)" type="AuthorizationServer" required>
+  The authorization server configuration. Must include `name`, `description`, and `audiences`.
+</ParamField>
+
+<ResponseField name="*AuthorizationServer" type="object" required>
+  The created authorization server with its assigned `id` and `issuer`.
+</ResponseField>
+
+```go
+server := okta.AuthorizationServer{}
+server.SetName("My Custom Auth Server")
+server.SetDescription("Authorization server for my API")
+server.SetAudiences([]string{"api://myapi"})
+
+created, resp, err := client.AuthorizationServerAPI.
+    CreateAuthorizationServer(context.Background()).
+    AuthorizationServer(server).
+    Execute()
+if err != nil {
+    fmt.Printf("Error creating authorization server: %v\n", err)
+}
+fmt.Printf("Created: %+v\n Response: %+v\n\n", created, resp)
+```
+
+---
+
+### `ReplaceAuthorizationServer`
+
+```go
+func (a *AuthorizationServerAPIService) ReplaceAuthorizationServer(ctx context.Context, authServerId string) ApiReplaceAuthorizationServerRequest
+```
+
+Replaces the configuration of an authorization server. All required properties must be included in the request body.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server to replace.
+</ParamField>
+
+<ResponseField name="*AuthorizationServer" type="object" required>
+  The updated authorization server.
+</ResponseField>
+
+---
+
+### `DeleteAuthorizationServer`
+
+```go
+func (a *AuthorizationServerAPIService) DeleteAuthorizationServer(ctx context.Context, authServerId string) ApiDeleteAuthorizationServerRequest
+```
+
+Permanently deletes an authorization server and all associated policies, rules, scopes, and claims.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server to delete.
+</ParamField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+<Warning>
+  Deleting an authorization server also removes all its policies, scopes, and claims. This action cannot be undone.
+</Warning>
+
+---
+
+### `ActivateAuthorizationServer` / `DeactivateAuthorizationServer`
+
+```go
+func (a *AuthorizationServerAPIService) ActivateAuthorizationServer(ctx context.Context, authServerId string) ApiActivateAuthorizationServerRequest
+func (a *AuthorizationServerAPIService) DeactivateAuthorizationServer(ctx context.Context, authServerId string) ApiDeactivateAuthorizationServerRequest
+```
+
+Activates or deactivates an authorization server. A deactivated server stops issuing tokens.
+
+Both methods take `ctx context.Context` and `authServerId string`, and return `*APIResponse`.
+
+---
+
+## AuthorizationServerScopesAPI
+
+The `AuthorizationServerScopesAPI` manages custom OAuth 2.0 scopes for a specific authorization server. Access it via `client.AuthorizationServerScopesAPI`.
+
+### `ListOAuth2Scopes`
+
+```go
+func (a *AuthorizationServerScopesAPIService) ListOAuth2Scopes(ctx context.Context, authServerId string) ApiListOAuth2ScopesRequest
+```
+
+Lists all custom token scopes defined for an authorization server.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server.
+</ParamField>
+
+<ResponseField name="[]OAuth2Scope" type="slice" required>
+  Slice of scope objects, each with `name`, `description`, `consent`, and `metadataPublish`.
+</ResponseField>
+
+```go
+scopes, resp, err := client.AuthorizationServerScopesAPI.
+    ListOAuth2Scopes(context.Background(), "{authServerId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error listing scopes: %v\n", err)
+}
+for _, scope := range scopes {
+    fmt.Printf("Scope: %s\n", scope.GetName())
+}
+```
+
+---
+
+### `CreateOAuth2Scope`
+
+```go
+func (a *AuthorizationServerScopesAPIService) CreateOAuth2Scope(ctx context.Context, authServerId string) ApiCreateOAuth2ScopeRequest
+```
+
+Creates a custom token scope for an authorization server.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".OAuth2Scope(oAuth2Scope OAuth2Scope)" type="OAuth2Scope" required>
+  The scope definition. `name` is required.
+</ParamField>
+
+<ResponseField name="*OAuth2Scope" type="object" required>
+  The created scope.
+</ResponseField>
+
+```go
+scope := okta.OAuth2Scope{}
+scope.SetName("read:reports")
+scope.SetDescription("Read access to reports")
+scope.SetConsent("REQUIRED")
+
+created, resp, err := client.AuthorizationServerScopesAPI.
+    CreateOAuth2Scope(context.Background(), "{authServerId}").
+    OAuth2Scope(scope).
+    Execute()
+if err != nil {
+    fmt.Printf("Error creating scope: %v\n", err)
+}
+fmt.Printf("Scope created: %+v\n Response: %+v\n\n", created, resp)
+```
+
+---
+
+### `DeleteOAuth2Scope`
+
+```go
+func (a *AuthorizationServerScopesAPIService) DeleteOAuth2Scope(ctx context.Context, authServerId string, scopeId string) ApiDeleteOAuth2ScopeRequest
+```
+
+Deletes a custom token scope.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server.
+</ParamField>
+
+<ParamField path="scopeId" type="string" required>
+  The unique ID of the scope to delete.
+</ParamField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+---
+
+## AuthorizationServerClaimsAPI
+
+The `AuthorizationServerClaimsAPI` manages custom token claims for a specific authorization server. Access it via `client.AuthorizationServerClaimsAPI`.
+
+### `ListOAuth2Claims`
+
+```go
+func (a *AuthorizationServerClaimsAPIService) ListOAuth2Claims(ctx context.Context, authServerId string) ApiListOAuth2ClaimsRequest
+```
+
+Lists all custom token claims for an authorization server.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server.
+</ParamField>
+
+<ResponseField name="[]OAuth2Claim" type="slice" required>
+  Slice of claim objects.
+</ResponseField>
+
+```go
+claims, resp, err := client.AuthorizationServerClaimsAPI.
+    ListOAuth2Claims(context.Background(), "{authServerId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error listing claims: %v\n", err)
+}
+for _, claim := range claims {
+    fmt.Printf("Claim: %s\n", claim.GetName())
+}
+```
+
+---
+
+### `CreateOAuth2Claim`
+
+```go
+func (a *AuthorizationServerClaimsAPIService) CreateOAuth2Claim(ctx context.Context, authServerId string) ApiCreateOAuth2ClaimRequest
+```
+
+Creates a custom token claim for an authorization server.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".OAuth2Claim(oAuth2Claim OAuth2Claim)" type="OAuth2Claim" required>
+  The claim definition including `name`, `valueType`, `value`, and `claimType`.
+</ParamField>
+
+<ResponseField name="*OAuth2Claim" type="object" required>
+  The created claim.
+</ResponseField>
+
+```go
+claim := okta.OAuth2Claim{}
+claim.SetName("groups")
+claim.SetValueType("GROUPS")
+claim.SetValue(".*")
+claim.SetClaimType("RESOURCE")
+
+created, resp, err := client.AuthorizationServerClaimsAPI.
+    CreateOAuth2Claim(context.Background(), "{authServerId}").
+    OAuth2Claim(claim).
+    Execute()
+if err != nil {
+    fmt.Printf("Error creating claim: %v\n", err)
+}
+fmt.Printf("Claim created: %+v\n Response: %+v\n\n", created, resp)
+```
+
+---
+
+## AuthorizationServerPoliciesAPI
+
+The `AuthorizationServerPoliciesAPI` manages access policies for a specific authorization server. Policies define who can request tokens and under what conditions. Access it via `client.AuthorizationServerPoliciesAPI`.
+
+### Key methods
+
+<AccordionGroup>
+  <Accordion title="ListAuthorizationServerPolicies">
+    ```go
+    ListAuthorizationServerPolicies(ctx context.Context, authServerId string) ApiListAuthorizationServerPoliciesRequest
+    // Returns: []AuthorizationServerPolicy
+    ```
+    Lists all policies for an authorization server.
+  </Accordion>
+
+  <Accordion title="CreateAuthorizationServerPolicy">
+    ```go
+    CreateAuthorizationServerPolicy(ctx context.Context, authServerId string) ApiCreateAuthorizationServerPolicyRequest
+    // Returns: *AuthorizationServerPolicy
+    ```
+    Creates a new access policy. Chain `.Policy(policy AuthorizationServerPolicy)` to supply the policy body.
+  </Accordion>
+
+  <Accordion title="GetAuthorizationServerPolicy">
+    ```go
+    GetAuthorizationServerPolicy(ctx context.Context, authServerId string, policyId string) ApiGetAuthorizationServerPolicyRequest
+    // Returns: *AuthorizationServerPolicy
+    ```
+    Retrieves a specific policy.
+  </Accordion>
+
+  <Accordion title="ReplaceAuthorizationServerPolicy">
+    ```go
+    ReplaceAuthorizationServerPolicy(ctx context.Context, authServerId string, policyId string) ApiReplaceAuthorizationServerPolicyRequest
+    // Returns: *AuthorizationServerPolicy
+    ```
+    Replaces an existing policy.
+  </Accordion>
+
+  <Accordion title="DeleteAuthorizationServerPolicy">
+    ```go
+    DeleteAuthorizationServerPolicy(ctx context.Context, authServerId string, policyId string) ApiDeleteAuthorizationServerPolicyRequest
+    // Returns: *APIResponse
+    ```
+    Deletes a policy and all its rules.
+  </Accordion>
+
+  <Accordion title="ActivateAuthorizationServerPolicy / DeactivateAuthorizationServerPolicy">
+    ```go
+    ActivateAuthorizationServerPolicy(ctx context.Context, authServerId string, policyId string) ApiActivateAuthorizationServerPolicyRequest
+    DeactivateAuthorizationServerPolicy(ctx context.Context, authServerId string, policyId string) ApiDeactivateAuthorizationServerPolicyRequest
+    // Both return: *APIResponse
+    ```
+    Activates or deactivates a specific policy.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## AuthorizationServerKeysAPI
+
+The `AuthorizationServerKeysAPI` manages the JSON Web Keys (JWKs) used to sign tokens. Access it via `client.AuthorizationServerKeysAPI`.
+
+### `RotateAuthorizationServerKeys`
+
+```go
+func (a *AuthorizationServerKeysAPIService) RotateAuthorizationServerKeys(ctx context.Context, authServerId string) ApiRotateAuthorizationServerKeysRequest
+```
+
+Rotates the current signing keys for an authorization server. After rotation, the `ACTIVE` key becomes `EXPIRED`, the `NEXT` key becomes `ACTIVE`, and the server immediately starts signing tokens with the new active key.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="authServerId" type="string" required>
+  The unique ID of the authorization server.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".Use(use JwkUse)" type="JwkUse" required>
+  The key use type. Pass `okta.JWKUSE_SIG` for signature keys.
+</ParamField>
+
+<ResponseField name="[]AuthorizationServerJsonWebKey" type="slice" required>
+  The updated set of keys including the new active key.
+</ResponseField>
+
+<Note>
+  Okta automatically rotates keys in `AUTO` mode. If you rotate keys manually, invalidate any intermediate token caches and re-fetch the JWKS endpoint so consuming services pick up the new keys immediately.
+</Note>
+
+```go
+keys, resp, err := client.AuthorizationServerKeysAPI.
+    RotateAuthorizationServerKeys(context.Background(), "{authServerId}").
+    Use(okta.JWKUSE_SIG).
+    Execute()
+if err != nil {
+    fmt.Printf("Error rotating keys: %v\n", err)
+}
+for _, key := range keys {
+    fmt.Printf("Key: kid=%s status=%s\n", key.GetKid(), key.GetStatus())
+}
+fmt.Printf("Response: %+v\n", resp)
+```
+
+### `ListAuthorizationServerKeys`
+
+```go
+func (a *AuthorizationServerKeysAPIService) ListAuthorizationServerKeys(ctx context.Context, authServerId string) ApiListAuthorizationServerKeysRequest
+// Returns: []AuthorizationServerJsonWebKey
+```
+
+Lists all current, future (`NEXT`), and expired keys used by the authorization server.

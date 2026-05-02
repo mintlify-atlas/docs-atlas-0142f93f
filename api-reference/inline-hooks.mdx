@@ -1,0 +1,338 @@
+---
+title: "InlineHookAPI — Manage Okta inline hooks"
+description: "Reference for client.InlineHookAPI: create and manage Okta inline hooks that execute custom logic during Okta sign-in and provisioning flows."
+---
+
+Inline hooks let you inject custom logic into specific Okta processes at runtime. When a triggering event occurs—such as a token being minted, a user registering, or a password being imported—Okta pauses the flow, sends a request to your external service, and uses the response to influence the outcome. The `InlineHookAPI` in the Go SDK provides methods to create, configure, activate, deactivate, and test inline hooks.
+
+Accessed via `client.InlineHookAPI()`. An org can have at most 50 inline hooks across all types combined.
+
+---
+
+## Inline hook types
+
+When creating an inline hook you must specify its `type` to tell Okta which process the hook participates in.
+
+| Type value | Hook name |
+|---|---|
+| `com.okta.oauth2.tokens.transform` | Token inline hook — modify tokens before they are issued |
+| `com.okta.saml.tokens.transform` | SAML assertion inline hook — modify SAML assertions |
+| `com.okta.import.transform` | User import inline hook — transform user attributes during import |
+| `com.okta.user.pre-registration` | Registration inline hook — allow or deny self-registration |
+| `com.okta.telephony.provider` | Telephony inline hook — custom SMS/voice delivery |
+| `com.okta.user.credential.password.import` | Password import inline hook — verify passwords on first use |
+
+---
+
+## InlineHook model
+
+`InlineHook` represents a registered inline hook returned by GET and lifecycle methods.
+
+<ResponseField name="id" type="string">
+  Unique identifier for the inline hook. Assigned by Okta on creation.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the inline hook.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  The inline hook type string from the table above.
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Version of the inline hook type. The currently supported value is `1.0.0`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Lifecycle status: `ACTIVE` or `INACTIVE`. Only `INACTIVE` hooks can be deleted.
+</ResponseField>
+
+<ResponseField name="channel" type="object">
+  Delivery channel configuration.
+  <Expandable title="InlineHookChannel fields">
+    <ResponseField name="type" type="string">Channel type. Supported values are `HTTP` and `OAUTH`.</ResponseField>
+    <ResponseField name="version" type="string">Channel version. Use `1.0.0`.</ResponseField>
+    <ResponseField name="config" type="object">
+      Properties of the communications channel.
+      <Expandable title="InlineHookChannelConfig fields">
+        <ResponseField name="uri" type="string">The HTTPS endpoint URL for your external service. Must begin with `https://`.</ResponseField>
+        <ResponseField name="method" type="string">HTTP method for the outbound request.</ResponseField>
+        <ResponseField name="headers" type="object[]">Optional additional HTTP headers. Each entry has `key` and `value` fields.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="created" type="time.Time">
+  Timestamp when the hook was created.
+</ResponseField>
+
+<ResponseField name="lastUpdated" type="time.Time">
+  Timestamp of the most recent update.
+</ResponseField>
+
+---
+
+## InlineHookCreate model
+
+`InlineHookCreate` is the request body used when calling `CreateInlineHook`.
+
+<ResponseField name="name" type="string">
+  Display name for the new inline hook.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  The inline hook type string.
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Hook type version. Use `1.0.0`.
+</ResponseField>
+
+<ResponseField name="channel" type="object">
+  Delivery channel configuration using `InlineHookChannelCreate`.
+  <Expandable title="InlineHookChannelCreate fields">
+    <ResponseField name="type" type="string">Channel type: `HTTP` or `OAUTH`.</ResponseField>
+    <ResponseField name="version" type="string">Channel version. Use `1.0.0`.</ResponseField>
+    <ResponseField name="config" type="object">
+      <Expandable title="InlineHookChannelConfigCreate fields">
+        <ResponseField name="uri" type="string">The HTTPS endpoint URL for your service. No whitespace allowed.</ResponseField>
+        <ResponseField name="method" type="string">HTTP method.</ResponseField>
+        <ResponseField name="headers" type="object[]">Optional additional headers.</ResponseField>
+        <ResponseField name="authScheme" type="object">Authentication scheme for the outbound request. Set `type` to `HEADER`, `key` to the header name, and `value` to the secret.</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## ListInlineHooks
+
+Lists all inline hooks, or all hooks of a specific type if you chain `.Type(typeString)`.
+
+```go
+func (a *InlineHookAPIService) ListInlineHooks(ctx context.Context) ApiListInlineHooksRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+**Returns** `([]InlineHook, *APIResponse, error)`
+
+---
+
+## GetInlineHook
+
+Retrieves a single inline hook by ID.
+
+```go
+func (a *InlineHookAPIService) GetInlineHook(ctx context.Context, inlineHookId string) ApiGetInlineHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="inlineHookId" type="string" required>
+  The `id` of the inline hook to retrieve.
+</ParamField>
+
+**Returns** `(*InlineHook, *APIResponse, error)`
+
+---
+
+## CreateInlineHook
+
+Creates a new inline hook in `ACTIVE` status. Your external service endpoint must use HTTPS.
+
+```go
+func (a *InlineHookAPIService) CreateInlineHook(ctx context.Context) ApiCreateInlineHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+Chain `.InlineHook(okta.InlineHookCreate{...})` on the returned request to supply the body, then call `.Execute()`.
+
+**Returns** `(*InlineHookCreateResponse, *APIResponse, error)`
+
+---
+
+## UpdateInlineHook
+
+Updates an inline hook by ID using a partial update.
+
+```go
+func (a *InlineHookAPIService) UpdateInlineHook(ctx context.Context, inlineHookId string) ApiUpdateInlineHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="inlineHookId" type="string" required>
+  The `id` of the inline hook to update.
+</ParamField>
+
+**Returns** `(*InlineHook, *APIResponse, error)`
+
+---
+
+## DeleteInlineHook
+
+Permanently deletes an inline hook. The hook must have `INACTIVE` status before deletion.
+
+```go
+func (a *InlineHookAPIService) DeleteInlineHook(ctx context.Context, inlineHookId string) ApiDeleteInlineHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="inlineHookId" type="string" required>
+  The `id` of the inline hook to delete.
+</ParamField>
+
+**Returns** `(*APIResponse, error)`
+
+---
+
+## ActivateInlineHook
+
+Activates an inactive inline hook so it participates in Okta flows.
+
+```go
+func (a *InlineHookAPIService) ActivateInlineHook(ctx context.Context, inlineHookId string) ApiActivateInlineHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="inlineHookId" type="string" required>
+  The `id` of the inline hook to activate.
+</ParamField>
+
+**Returns** `(*InlineHook, *APIResponse, error)`
+
+---
+
+## DeactivateInlineHook
+
+Deactivates an active inline hook so it no longer runs during Okta flows.
+
+```go
+func (a *InlineHookAPIService) DeactivateInlineHook(ctx context.Context, inlineHookId string) ApiDeactivateInlineHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="inlineHookId" type="string" required>
+  The `id` of the inline hook to deactivate.
+</ParamField>
+
+**Returns** `(*InlineHook, *APIResponse, error)`
+
+---
+
+## ExecuteInlineHook
+
+Sends a test payload through the hook channel and returns the response from your external service. Use this only for testing; the execution is not tied to any real Okta flow. Okta enforces a three-second timeout with one retry.
+
+```go
+func (a *InlineHookAPIService) ExecuteInlineHook(ctx context.Context, inlineHookId string) ApiExecuteInlineHookRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="inlineHookId" type="string" required>
+  The `id` of the inline hook to test.
+</ParamField>
+
+**Returns** `(*ExecuteInlineHook200Response, *APIResponse, error)`
+
+<Note>
+  This endpoint is intended for testing purposes only. Use it to validate that your external service receives the correct payload and responds correctly before enabling the hook in production.
+</Note>
+
+---
+
+## Example: creating a token inline hook
+
+The following example creates an inline hook that fires during OAuth 2.0 token minting, allowing your service to add custom claims to access tokens.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	okta "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+	cfg, err := okta.NewConfiguration()
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := okta.NewAPIClient(cfg)
+	ctx := context.Background()
+
+	// Build the auth scheme for header-based authentication
+	authScheme := okta.InlineHookChannelConfigAuthSchemeBody{}
+	authScheme.SetType("HEADER")
+	authScheme.SetKey("Authorization")
+	authScheme.SetValue("Bearer my-hook-secret")
+
+	// Build the channel config
+	channelConfig := okta.InlineHookChannelConfigCreate{}
+	channelConfig.SetUri("https://hooks.example.com/okta/token")
+	channelConfig.SetMethod("POST")
+	channelConfig.SetAuthScheme(authScheme)
+
+	// Build the channel
+	channel := okta.InlineHookChannelCreate{}
+	channel.SetType("HTTP")
+	channel.SetVersion("1.0.0")
+	channel.SetConfig(channelConfig)
+
+	// Assemble the create request
+	hookCreate := okta.InlineHookCreate{}
+	hookCreate.SetName("Token Customizer")
+	hookCreate.SetType("com.okta.oauth2.tokens.transform")
+	hookCreate.SetVersion("1.0.0")
+	hookCreate.SetChannel(channel)
+
+	result, _, err := client.InlineHookAPI().
+		CreateInlineHook(ctx).
+		InlineHook(hookCreate).
+		Execute()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Created inline hook: %s (id: %s, status: %s)\n",
+		*result.Name, *result.Id, *result.Status)
+
+	// List all token hooks to confirm
+	hooks, _, err := client.InlineHookAPI().
+		ListInlineHooks(ctx).
+		Type("com.okta.oauth2.tokens.transform").
+		Execute()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Token inline hooks registered: %d\n", len(hooks))
+}
+```

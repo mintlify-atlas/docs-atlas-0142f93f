@@ -1,0 +1,57 @@
+---
+title: "Okta Go SDK: manage users, groups, and apps"
+description: "The official Go SDK for the Okta Management API. Manage users, groups, applications, and policies from your Go server-side applications."
+---
+
+The Okta Go Management SDK (`okta-sdk-golang`) gives you full programmatic access to the Okta Management API from Go server-side applications. Whether you're automating user provisioning, managing application assignments, or building complex policy workflows, this SDK handles authentication, pagination, rate limiting, and caching so you can focus on your business logic.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the SDK and make your first API call in minutes
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Configure the client with API tokens, OAuth 2.0, and environment variables
+  </Card>
+  <Card title="Authentication" icon="lock" href="/authentication/api-token">
+    Choose the right auth mode: API Token, Private Key, JWT, or Bearer Token
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/client">
+    Full reference for all SDK methods and types
+  </Card>
+</CardGroup>
+
+## What you can do
+
+The SDK wraps every endpoint of the Okta Management API. Key capabilities include:
+
+<CardGroup cols={2}>
+  <Card title="User management" icon="users" href="/guides/users">
+    Create, update, activate, deactivate, and delete users. Manage credentials and factors.
+  </Card>
+  <Card title="Group management" icon="layer-group" href="/guides/groups">
+    Add groups, assign members, and manage group rules and push mappings.
+  </Card>
+  <Card title="Application management" icon="window" href="/guides/applications">
+    Register SAML, OIDC, and SWA apps. Assign users and groups to applications.
+  </Card>
+  <Card title="Policies & rules" icon="shield" href="/guides/policies">
+    Manage sign-on, password, and enrollment policies and their rules.
+  </Card>
+</CardGroup>
+
+## SDK highlights
+
+- **Multiple auth modes** — API Token (SSWS), OAuth 2.0 with Private Key, JWT assertion, or Bearer Token
+- **Built-in caching** — memory cache with configurable TTL reduces API calls automatically
+- **Rate limit handling** — automatic retry with backoff on 429 responses
+- **Pagination** — simple `HasNextPage()` / `Next()` helpers for all list endpoints
+- **DPoP support** — Demonstrating Proof of Possession for enhanced OAuth 2.0 security
+- **Context-aware** — pass `context.Context` to every API call for cancellation and deadlines
+
+## Current version
+
+The current stable release is **v6.x**. See the [migration guide](/migration/v5-to-v6) if you're upgrading from an earlier version.
+
+<Note>
+  This SDK is for the **Okta Management API** only. To call the Authentication API or implement end-user sign-in flows, use the [Okta JWT Verifier for Go](https://github.com/okta/okta-jwt-verifier-golang) or implement the OAuth 2.0 flows directly.
+</Note>

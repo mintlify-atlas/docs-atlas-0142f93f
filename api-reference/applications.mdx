@@ -1,0 +1,583 @@
+---
+title: "ApplicationAPI — Okta application management"
+description: "Reference for client.ApplicationAPI: create SAML, OIDC, and SWA applications, manage app assignments, and control SSO settings in Go."
+---
+
+The `ApplicationAPI`, `ApplicationUsersAPI`, and `ApplicationGroupsAPI` interfaces give you full control over Okta app instances in your org. Use them to create SAML 2.0, OIDC, and SWA applications, assign users and groups, and manage lifecycle state. All methods follow the same builder pattern: call the method to get a request object, chain any optional parameters, then call `.Execute()` to send the request.
+
+## Polymorphic model pattern
+
+Okta apps are polymorphic — the same `ListApplications` endpoint can return OIDC apps, SAML apps, SWA apps, and more. The SDK represents this with the `ListApplications200ResponseInner` wrapper type. When creating or updating an app, you wrap your concrete type (for example, `OpenIdConnectApplication`) inside this wrapper. When reading back an app, you inspect which field is non-nil to determine the concrete type.
+
+```go
+// Wrapping a concrete app type for creation
+app := okta.OpenIdConnectApplication{}
+// ... configure app fields ...
+wrapper := okta.ListApplications200ResponseInner{OpenIdConnectApplication: &app}
+
+// Inspecting the result after retrieval
+result, resp, err := client.ApplicationAPI.GetApplication(ctx, appId).Execute()
+if result.OpenIdConnectApplication != nil {
+    oidcApp := result.OpenIdConnectApplication
+    fmt.Println("OIDC app label:", oidcApp.GetLabel())
+}
+```
+
+---
+
+## ApplicationAPI
+
+### `ListApplications`
+
+```go
+func (a *ApplicationAPIService) ListApplications(ctx context.Context) ApiListApplicationsRequest
+```
+
+Lists all applications in the org with pagination. Supports filter expressions to narrow results.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context for deadlines, cancellation, and authentication.
+</ParamField>
+
+**Optional chained parameters:**
+
+<ParamField path=".Filter(filter string)" type="string">
+  An Okta filter expression, for example `status eq "ACTIVE"`.
+</ParamField>
+
+<ParamField path=".Q(q string)" type="string">
+  Searches application `label` for a case-insensitive match.
+</ParamField>
+
+<ParamField path=".Limit(limit int32)" type="int32">
+  Maximum number of results per page.
+</ParamField>
+
+<ParamField path=".After(after string)" type="string">
+  Cursor for the next page of results.
+</ParamField>
+
+<ResponseField name="[]ListApplications200ResponseInner" type="slice" required>
+  A slice of polymorphic application wrappers.
+</ResponseField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata including status code and headers.
+</ResponseField>
+
+```go
+apps, resp, err := client.ApplicationAPI.ListApplications(context.Background()).Execute()
+if err != nil {
+    fmt.Printf("Error listing applications: %v\n", err)
+}
+fmt.Printf("ApplicationList: %+v\n Response: %+v\n\n", apps, resp)
+```
+
+---
+
+### `GetApplication`
+
+```go
+func (a *ApplicationAPIService) GetApplication(ctx context.Context, appId string) ApiGetApplicationRequest
+```
+
+Retrieves an application from your Okta organization by ID.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ResponseField name="*ListApplications200ResponseInner" type="object" required>
+  Polymorphic wrapper containing the concrete application type.
+</ResponseField>
+
+```go
+application, resp, err := client.ApplicationAPI.GetApplication(context.Background(), "0oaswjmkbtlpBDWpu0h7").Execute()
+if err != nil {
+    fmt.Printf("Error getting application: %v\n", err)
+}
+fmt.Printf("Application: %+v\n Response: %+v\n\n", application, resp)
+```
+
+---
+
+### `CreateApplication`
+
+```go
+func (a *ApplicationAPIService) CreateApplication(ctx context.Context) ApiCreateApplicationRequest
+```
+
+Creates an application instance in your Okta org. You can create either an OIN (Okta Integration Network) app using a prescribed `name` and `signOnMode`, or a custom app by specifying the `signOnMode` directly.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".Application(application ListApplications200ResponseInner)" type="ListApplications200ResponseInner" required>
+  The polymorphic wrapper containing your concrete application object.
+</ParamField>
+
+**Optional chained parameters:**
+
+<ParamField path=".Activate(activate bool)" type="bool">
+  When `true`, activates the app immediately after creation. Defaults to `true`.
+</ParamField>
+
+<ResponseField name="*ListApplications200ResponseInner" type="object" required>
+  The created application wrapped in the polymorphic response type.
+</ResponseField>
+
+**Example: Create an OIDC application**
+
+This example comes directly from the SDK README and shows the full setup required to create an OIDC client application:
+
+```go
+import (
+    "fmt"
+    "context"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    settingClient := okta.NewOpenIdConnectApplicationSettingsClient([]string{"grantTypes"})
+    settingClient.SetClientUri("https://example.com/client")
+    settingClient.SetLogoUri("https://example.com/assets/images/logo-new.png")
+    settingClient.SetResponseTypes([]string{"token", "id_token", "code"})
+    settingClient.SetRedirectUris([]string{"https://example.com/oauth2/callback", "myapp://callback"})
+    settingClient.SetPostLogoutRedirectUris([]string{"https://example.com/postlogout", "myapp://postlogoutcallback"})
+    settingClient.SetGrantTypes([]string{"implicit", "authorization_code"})
+    settingClient.SetApplicationType("native")
+    settingClient.SetTosUri("https://example.com/client/tos")
+    settingClient.SetPolicyUri("https://example.com/client/policy")
+
+    setting := okta.NewOpenIdConnectApplicationSettings()
+    setting.SetOauthClient(*settingClient)
+
+    credClient := okta.NewApplicationCredentialsOAuthClient()
+    credClient.SetTokenEndpointAuthMethod("client_secret_post")
+    credClient.SetClientId("id")
+    credClient.SetAutoKeyRotation(true)
+    credentials := okta.NewOAuthApplicationCredentials()
+    credentials.SetOauthClient(*credClient)
+
+    res := okta.OpenIdConnectApplication{}
+    res.SetSettings(*setting)
+    res.SetCredentials(*credentials)
+    res.SetName("oidc_client")
+    res.SetSignOnMode("OPENID_CONNECT")
+    res.SetLabel("label")
+
+    application, resp, err := client.ApplicationAPI.CreateApplication(context.Background()).
+        Application(okta.ListApplications200ResponseInner{OpenIdConnectApplication: &res}).
+        Execute()
+    if err != nil {
+        fmt.Printf("Error creating application: %v\n", err)
+    }
+    fmt.Printf("Application: %+v\n Response: %+v\n\n", application, resp)
+}
+```
+
+---
+
+### `ReplaceApplication`
+
+```go
+func (a *ApplicationAPIService) ReplaceApplication(ctx context.Context, appId string) ApiReplaceApplicationRequest
+```
+
+Replaces all properties for an application. All required properties must be included in the request body. System-assigned properties (`id`, `name`, `status`, `created`, `lastUpdated`) are ignored.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application to replace.
+</ParamField>
+
+<ResponseField name="*ListApplications200ResponseInner" type="object" required>
+  The updated application.
+</ResponseField>
+
+---
+
+### `DeleteApplication`
+
+```go
+func (a *ApplicationAPIService) DeleteApplication(ctx context.Context, appId string) ApiDeleteApplicationRequest
+```
+
+Permanently deletes an inactive application. Only applications in `INACTIVE` status can be deleted. Deactivate the app first using `DeactivateApplication` if needed.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application to delete.
+</ParamField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+---
+
+### `ActivateApplication`
+
+```go
+func (a *ApplicationAPIService) ActivateApplication(ctx context.Context, appId string) ApiActivateApplicationRequest
+```
+
+Activates an inactive application.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application to activate.
+</ParamField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+---
+
+### `DeactivateApplication`
+
+```go
+func (a *ApplicationAPIService) DeactivateApplication(ctx context.Context, appId string) ApiDeactivateApplicationRequest
+```
+
+Deactivates an active application. Deactivating an app triggers a full reconciliation of all users assigned via groups — this removes the app assignment for the deactivated app and may correct previously failed removals.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application to deactivate.
+</ParamField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+---
+
+## ApplicationUsersAPI
+
+The `ApplicationUsersAPI` manages direct user-to-application assignments. Access it via `client.ApplicationUsersAPI`.
+
+### `AssignUserToApplication`
+
+```go
+func (a *ApplicationUsersAPIService) AssignUserToApplication(ctx context.Context, appId string) ApiAssignUserToApplicationRequest
+```
+
+Assigns a user to an application for SSO, or for SSO and provisioning. For provisioning apps, include app-specific credentials and profile attributes.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".AppUser(appUser AppUserAssignRequest)" type="AppUserAssignRequest" required>
+  The user assignment request body including the user ID and optional profile/credentials.
+</ParamField>
+
+<ResponseField name="*AppUser" type="object" required>
+  The created application user assignment.
+</ResponseField>
+
+```go
+assignReq := okta.AppUserAssignRequest{}
+assignReq.SetId("{userId}")
+
+appUser, resp, err := client.ApplicationUsersAPI.
+    AssignUserToApplication(context.Background(), "{appId}").
+    AppUser(assignReq).
+    Execute()
+if err != nil {
+    fmt.Printf("Error assigning user: %v\n", err)
+}
+fmt.Printf("AppUser: %+v\n", appUser)
+```
+
+---
+
+### `GetApplicationUser`
+
+```go
+func (a *ApplicationUsersAPIService) GetApplicationUser(ctx context.Context, appId string, userId string) ApiGetApplicationUserRequest
+```
+
+Retrieves a specific user assignment for an application.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ParamField path="userId" type="string" required>
+  The ID of the Okta user.
+</ParamField>
+
+<ResponseField name="*AppUser" type="object" required>
+  The application user assignment.
+</ResponseField>
+
+---
+
+### `ListApplicationUsers`
+
+```go
+func (a *ApplicationUsersAPIService) ListApplicationUsers(ctx context.Context, appId string) ApiListApplicationUsersRequest
+```
+
+Lists all users assigned to an application.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ResponseField name="[]AppUser" type="slice" required>
+  Slice of application user assignments.
+</ResponseField>
+
+---
+
+### `UpdateApplicationUser`
+
+```go
+func (a *ApplicationUsersAPIService) UpdateApplicationUser(ctx context.Context, appId string, userId string) ApiUpdateApplicationUserRequest
+```
+
+Updates the profile or credentials of a user assigned to an application.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ParamField path="userId" type="string" required>
+  The ID of the Okta user.
+</ParamField>
+
+<ResponseField name="*AppUser" type="object" required>
+  The updated application user assignment.
+</ResponseField>
+
+---
+
+### `UnassignUserFromApplication`
+
+```go
+func (a *ApplicationUsersAPIService) UnassignUserFromApplication(ctx context.Context, appId string, userId string) ApiUnassignUserFromApplicationRequest
+```
+
+Removes a user from an application. This is a destructive operation — the user's app profile cannot be recovered. If the app has provisioning enabled and is configured to deactivate users, the user will also be deactivated in the target app.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ParamField path="userId" type="string" required>
+  The ID of the Okta user to remove.
+</ParamField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+---
+
+## ApplicationGroupsAPI
+
+The `ApplicationGroupsAPI` manages group-to-application assignments. When a group is assigned to an app, the app is assigned to every user in that group. Access it via `client.ApplicationGroupsAPI`.
+
+### `AssignGroupToApplication`
+
+```go
+func (a *ApplicationGroupsAPIService) AssignGroupToApplication(ctx context.Context, appId string, groupId string) ApiAssignGroupToApplicationRequest
+```
+
+Assigns a group to an application. All users in the group receive the app assignment with a `scope` of `GROUP`.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ParamField path="groupId" type="string" required>
+  The unique ID of the group.
+</ParamField>
+
+<ResponseField name="*ApplicationGroupAssignment" type="object" required>
+  The created group assignment, including priority and profile properties.
+</ResponseField>
+
+```go
+assignment, resp, err := client.ApplicationGroupsAPI.
+    AssignGroupToApplication(context.Background(), "{appId}", "{groupId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error assigning group: %v\n", err)
+}
+fmt.Printf("Assignment: %+v\n", assignment)
+```
+
+---
+
+### `GetApplicationGroupAssignment`
+
+```go
+func (a *ApplicationGroupsAPIService) GetApplicationGroupAssignment(ctx context.Context, appId string, groupId string) ApiGetApplicationGroupAssignmentRequest
+```
+
+Retrieves an application group assignment.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ParamField path="groupId" type="string" required>
+  The unique ID of the group.
+</ParamField>
+
+<ResponseField name="*ApplicationGroupAssignment" type="object" required>
+  The group assignment.
+</ResponseField>
+
+---
+
+### `ListApplicationGroupAssignments`
+
+```go
+func (a *ApplicationGroupsAPIService) ListApplicationGroupAssignments(ctx context.Context, appId string) ApiListApplicationGroupAssignmentsRequest
+```
+
+Lists all group assignments for an application.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ResponseField name="[]ApplicationGroupAssignment" type="slice" required>
+  Slice of group assignments for the application.
+</ResponseField>
+
+---
+
+### `UnassignApplicationFromGroup`
+
+```go
+func (a *ApplicationGroupsAPIService) UnassignApplicationFromGroup(ctx context.Context, appId string, groupId string) ApiUnassignApplicationFromGroupRequest
+```
+
+Removes a group assignment from an application.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+<ParamField path="groupId" type="string" required>
+  The unique ID of the group.
+</ParamField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+---
+
+## ApplicationSSOAPI
+
+The `ApplicationSSOAPI` provides access to SSO metadata. Access it via `client.ApplicationSSOAPI`.
+
+### `PreviewSAMLmetadataForApplication`
+
+```go
+func (a *ApplicationSSOAPIService) PreviewSAMLmetadataForApplication(ctx context.Context, appId string) ApiPreviewSAMLmetadataForApplicationRequest
+```
+
+Returns the SSO SAML metadata XML for the specified application.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="appId" type="string" required>
+  The unique ID of the application.
+</ParamField>
+
+**Optional chained parameters:**
+
+<ParamField path=".Kid(kid string)" type="string">
+  Specific key ID to use for the metadata preview.
+</ParamField>
+
+<ResponseField name="string" type="string" required>
+  The SAML metadata XML as a string.
+</ResponseField>
+
+```go
+metadata, resp, err := client.ApplicationSSOAPI.
+    PreviewSAMLmetadataForApplication(context.Background(), "{appId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error fetching SAML metadata: %v\n", err)
+}
+fmt.Println(metadata)
+```

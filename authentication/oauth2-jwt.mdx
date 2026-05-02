@@ -1,0 +1,59 @@
+---
+title: "OAuth 2.0 with a JWT client assertion"
+description: "Use a pre-signed JWT assertion to authenticate the Okta Go SDK when you manage token signing externally, without storing a private key."
+---
+
+JWT client assertion mode lets you authenticate the SDK with a pre-signed JWT rather than providing a raw private key. The SDK exchanges the assertion for an OAuth 2.0 access token exactly as it does in [private key mode](/authentication/oauth2-private-key), but the responsibility for constructing and signing the JWT lies outside the SDK. Use this mode when you already have a token-signing layer in your infrastructure — such as a hardware security module, a central secrets service, or a sidecar process — and you do not want to pass private key material into your application.
+
+## How it differs from private key mode
+
+| | Private key mode | JWT assertion mode |
+|---|---|---|
+| Key material in app | Yes — PEM private key | No — pre-signed JWT only |
+| SDK signs the assertion | Yes | No |
+| Token caching | Automatic | Automatic |
+| Signing managed externally | No | Yes |
+
+In both modes the SDK sends a `client_credentials` grant request to Okta and caches the resulting access token. The difference is only in who signs the client assertion JWT.
+
+## Prerequisites
+
+- An Okta service application configured with a public key (see [create a service app](https://developer.okta.com/docs/guides/implement-oauth-for-okta-serviceapp/create-serviceapp-grantscopes/#create-a-service-app))
+- A signed JWT assertion in the format Okta expects (see the [Okta OAuth 2.0 for Okta guide](https://developer.okta.com/docs/guides/implement-oauth-for-okta/overview/))
+- The OAuth scopes your application needs granted to the service app
+
+## Initialize the client
+
+Pass `"JWT"` as the authorization mode and supply the pre-signed assertion string with `WithClientAssertion()`:
+
+```go
+config, err := okta.NewConfiguration(
+  okta.WithOrgUrl("https://{yourOktaDomain}"),
+  okta.WithAuthorizationMode("JWT"),
+  okta.WithClientAssertion("{{clientAssertion}}"),
+  okta.WithScopes(([]string{"okta.users.manage"})),
+)
+if err != nil {
+  fmt.Printf("Error: %v\n", err)
+}
+client := okta.NewAPIClient(config)
+```
+
+Replace `{{clientAssertion}}` with the signed JWT string produced by your signing infrastructure.
+
+<Warning>
+  JWT assertions are short-lived. If your assertion expires before the SDK can exchange it for an access token, the request will fail. Ensure your signing layer produces assertions with a sufficient `exp` claim, and re-initialize the client or refresh the assertion before it expires.
+</Warning>
+
+## Configuration setter reference
+
+| Setter | Description |
+|--------|-------------|
+| `WithAuthorizationMode("JWT")` | Enables OAuth 2.0 JWT assertion mode |
+| `WithClientAssertion(assertion string)` | The pre-signed JWT client assertion string |
+| `WithScopes(scopes []string)` | OAuth 2.0 scopes to request |
+
+## Related pages
+
+- [OAuth 2.0 with a private key pair](/authentication/oauth2-private-key) — let the SDK sign assertions using a PEM private key
+- [Scopes and supported endpoints](https://developer.okta.com/docs/guides/implement-oauth-for-okta/main/#scopes-and-supported-endpoints) — full list of available OAuth scopes

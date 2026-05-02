@@ -1,0 +1,145 @@
+---
+title: "Request caching in the Okta Go SDK"
+description: "The Okta Go SDK caches HTTP responses in memory by default. Learn to configure TTL, disable caching, or plug in a custom cache implementation."
+---
+
+The SDK caches successful GET responses in memory to reduce the number of HTTP requests made to the Okta API. By default, caching is enabled with a time-to-live (TTL) and cleanup interval (TTI) of 300 seconds each. You can tune these values, disable caching entirely, or replace the built-in cache with your own implementation.
+
+## Default behavior
+
+When caching is enabled, the SDK stores the raw `*http.Response` keyed by the full request URL. Subsequent identical GET requests are served from the cache without making a network call. Non-GET requests (POST, PUT, DELETE) automatically delete the corresponding cache entry before executing.
+
+The default configuration is:
+
+| Setting | Default value |
+|---------|---------------|
+| Cache enabled | `true` |
+| TTL (time to live) | `300` seconds |
+| TTI (cleanup interval) | `300` seconds |
+
+## Configuring cache behavior
+
+Pass configuration setters to `okta.NewConfiguration()` to adjust caching at client creation time.
+
+### Disabling the cache
+
+```go
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+    okta.WithCache(false),
+)
+```
+
+### Adjusting TTL and TTI
+
+`WithCacheTtl` controls how long a cached entry lives before it is considered stale. `WithCacheTti` controls how often the cache runs its cleanup sweep to evict expired entries.
+
+```go
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+    okta.WithCache(true),
+    okta.WithCacheTtl(60),  // entries live for 60 seconds
+    okta.WithCacheTti(120), // cleanup runs every 120 seconds
+)
+```
+
+## Refreshing the cache for a specific call
+
+In some workflows you need fresh data immediately—for example, after deleting a resource and then listing again. Call `client.RefreshNext()` before the request to bypass the cache for that single call. The cache entry is deleted and the live response is fetched and re-cached.
+
+```go
+// Delete a user, then list users with a guaranteed fresh response
+_, err = client.UserAPI.DeleteUser(ctx, userID).Execute()
+if err != nil {
+    fmt.Printf("error deleting user: %v\n", err)
+}
+
+// Force the next request to skip the cache
+users, resp, err := client.RefreshNext().UserAPI.ListUsers(ctx).Execute()
+if err != nil {
+    fmt.Printf("error listing users: %v\n", err)
+}
+```
+
+## OAuth access tokens are always cached
+
+Regardless of the cache configuration, OAuth 2.0 access tokens obtained through `PrivateKey`, `JWT`, or `JWK` authorization modes are always cached. Access token caching is controlled separately and respects the `expires_in` field returned by Okta's token endpoint, not the TTL you configure for HTTP response caching.
+
+## Implementing a custom cache
+
+You can replace the built-in in-memory cache by implementing the `Cache` interface and passing it via `WithCacheManager`. This is useful for sharing a cache across multiple client instances or for using an external store such as Redis.
+
+### The Cache interface
+
+```go
+type Cache interface {
+    Get(key string) *http.Response
+    Set(key string, value *http.Response)
+    GetString(key string) string
+    SetString(key string, value string)
+    Delete(key string)
+    Clear()
+    Has(key string) bool
+}
+```
+
+### Example custom cache driver
+
+```go
+type CustomCacheDriver struct{}
+
+func NewCustomCacheDriver() okta.Cache {
+    return CustomCacheDriver{}
+}
+
+func (c CustomCacheDriver) Get(key string) *http.Response {
+    return nil
+}
+
+func (c CustomCacheDriver) Set(key string, value *http.Response) {}
+
+func (c CustomCacheDriver) GetString(key string) string {
+    return ""
+}
+
+func (c CustomCacheDriver) SetString(key string, value string) {}
+
+func (c CustomCacheDriver) Delete(key string) {}
+
+func (c CustomCacheDriver) Clear() {}
+
+func (c CustomCacheDriver) Has(key string) bool {
+    return false
+}
+```
+
+Pass your implementation to the client at construction:
+
+```go
+myCache := NewCustomCacheDriver()
+
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+    okta.WithCacheManager(myCache),
+)
+if err != nil {
+    fmt.Printf("Error: %v\n", err)
+}
+client := okta.NewAPIClient(config)
+```
+
+<Note>
+When `WithCacheManager` is provided and `WithCache(true)` is set, the SDK uses your custom implementation instead of the default in-memory `GoCache`. If `WithCache(false)` is set, no caching occurs regardless of whether a cache manager is provided.
+</Note>
+
+## Configuration reference
+
+| Setter | Type | Description |
+|--------|------|-------------|
+| `WithCache(cache bool)` | `bool` | Enable or disable the request memory cache. |
+| `WithCacheTtl(i int32)` | `int32` | Time to live for cached entries, in seconds. |
+| `WithCacheTti(i int32)` | `int32` | Cache cleanup interval, in seconds. |
+| `WithCacheManager(cacheManager Cache)` | `Cache` | Replace the default cache with a custom implementation. |

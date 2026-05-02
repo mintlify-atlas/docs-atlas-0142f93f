@@ -1,0 +1,397 @@
+---
+title: "Migrate from v5 to v6 of the Okta Go SDK"
+description: "Breaking changes and migration steps for upgrading from okta-sdk-golang v5 to v6, including the new module path and API client patterns."
+---
+
+Version 6 of the Okta Go Management SDK is a significant update that aligns the SDK with the latest Okta Management API specification and adopts a fully generated, OpenAPI v3-based client. Upgrading from v5 to v6 requires changes to your import paths, client initialization, request patterns, and error handling. This guide walks through every breaking change with before-and-after examples so you can complete the migration systematically.
+
+<Warning>
+  v6 introduces multiple breaking changes. All call sites that use the v5 client must be updated — the old `okta.NewClient` constructor, context-in-client pattern, `query.Params` structs, and `*okta.Error` type are all removed.
+</Warning>
+
+## Prerequisites
+
+- Go 1.24 or later. v6 requires a newer minimum Go version than v5.
+- A Go module project (`go.mod`). Non-module projects are not supported.
+
+## Installation
+
+<Steps>
+
+<Step title="Update the module dependency">
+
+Run the following command to fetch v6 and update your `go.mod`:
+
+```bash
+go get github.com/okta/okta-sdk-golang/v6@latest
+```
+
+Or update `go.mod` manually:
+
+```go
+require github.com/okta/okta-sdk-golang/v6 v6.0.0
+```
+
+</Step>
+
+<Step title="Update all import paths">
+
+The module path now includes the major version suffix. Replace every occurrence of the v5 import path with the v6 path.
+
+<CodeGroup>
+
+```go v5
+import "github.com/okta/okta-sdk-golang/v5/okta"
+```
+
+```go v6
+import "github.com/okta/okta-sdk-golang/v6/okta"
+```
+
+</CodeGroup>
+
+Run a global search-and-replace across your codebase:
+
+```bash
+grep -rl "okta-sdk-golang/v5" . | xargs sed -i 's|okta-sdk-golang/v5|okta-sdk-golang/v6|g'
+```
+
+</Step>
+
+<Step title="Apply the breaking changes below">
+
+Work through each section to update client initialization, request calls, error handling, and pagination.
+
+</Step>
+
+</Steps>
+
+## Breaking changes
+
+### 1. Client initialization
+
+The global `okta.NewClient` constructor that returned a context-bound client is replaced by `okta.NewConfiguration` + `okta.NewAPIClient`. Context is no longer stored on the client — it is passed per-request instead.
+
+<CodeGroup>
+
+```go v5
+ctx, client, err := okta.NewClient(
+    context.TODO(),
+    okta.WithOrgUrl("https://dev-123456.okta.com"),
+    okta.WithToken("your-api-token"),
+)
+```
+
+```go v6
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://dev-123456.okta.com"),
+    okta.WithToken("your-api-token"),
+)
+if err != nil {
+    return nil, err
+}
+client := okta.NewAPIClient(config)
+```
+
+</CodeGroup>
+
+### 2. Context handling
+
+In v5, context was stored inside the client at construction time. In v6, you pass `context.Context` directly to each API call as the first argument.
+
+<CodeGroup>
+
+```go v5
+user, resp, err := client.User.GetUser(ctx, userId)
+```
+
+```go v6
+user, resp, err := client.UserAPI.GetUser(context.Background(), userId).Execute()
+```
+
+</CodeGroup>
+
+### 3. Request builder pattern and `Execute()`
+
+Every API method in v6 returns a request builder. You chain optional parameters onto the builder and call `.Execute()` to send the request. The old `query.Params` structs are removed.
+
+<CodeGroup>
+
+```go v5
+users, resp, err := client.User.ListUsers(ctx, &query.Params{
+    Limit: 10,
+})
+```
+
+```go v6
+users, resp, err := client.UserAPI.ListUsers(context.Background()).
+    Limit(10).
+    Execute()
+```
+
+</CodeGroup>
+
+The same pattern applies to mutations. Request body and optional query parameters are chained as builder methods:
+
+<CodeGroup>
+
+```go v5
+app, resp, err := client.Application.CreateApplication(ctx,
+    okta.NewBasicAuthApplication(),
+    &query.Params{Activate: &activate},
+)
+```
+
+```go v6
+app, resp, err := client.ApplicationAPI.CreateApplication(context.Background()).
+    Application(okta.NewBasicAuthApplication()).
+    Activate(true).
+    Execute()
+```
+
+</CodeGroup>
+
+### 4. Model construction and setter methods
+
+v6 models use constructor functions and getter/setter methods. Direct struct literal initialization with pointer fields is replaced by `New*` constructors and `Set*` methods.
+
+<CodeGroup>
+
+```go v5
+user := &okta.User{
+    Profile: &okta.UserProfile{
+        FirstName: "John",
+        LastName:  "Doe",
+        Email:     "john.doe@example.com",
+        Login:     "john.doe@example.com",
+    },
+}
+```
+
+```go v6
+profile := okta.NewUserProfile()
+profile.SetFirstName("John")
+profile.SetLastName("Doe")
+profile.SetEmail("john.doe@example.com")
+profile.SetLogin("john.doe@example.com")
+
+user := okta.NewCreateUserRequest()
+user.SetProfile(*profile)
+```
+
+</CodeGroup>
+
+<Warning>
+  Direct field access on model structs (e.g., `user.Profile.FirstName`) is deprecated in v6. Use the generated getter and setter methods to ensure forward compatibility.
+</Warning>
+
+### 5. Error handling
+
+The v5 `*okta.Error` type is replaced by `*okta.GenericOpenAPIError`, which exposes both a human-readable message and the raw response body.
+
+<CodeGroup>
+
+```go v5
+if err != nil {
+    if oktaErr, ok := err.(*okta.Error); ok {
+        fmt.Printf("Error Code: %s\n", oktaErr.ErrorCode)
+    }
+}
+```
+
+```go v6
+if err != nil {
+    if apiErr, ok := err.(*okta.GenericOpenAPIError); ok {
+        fmt.Printf("Error: %s\n", apiErr.Error())
+        fmt.Printf("Body: %s\n", apiErr.Body())
+    }
+}
+```
+
+</CodeGroup>
+
+### 6. Pagination
+
+The pagination API is similar in v5 and v6: check `resp.HasNextPage()` and call `resp.Next(&slice)` to fetch the next page. The main difference is that in v6, you no longer pass `ctx` to `resp.Next` — it is handled by the request builder internally.
+
+<CodeGroup>
+
+```go v5
+users, resp, err := client.User.ListUsers(ctx, nil)
+for resp.HasNextPage() {
+    var nextUsers []*okta.User
+    resp, err = resp.Next(ctx, &nextUsers)
+    users = append(users, nextUsers...)
+}
+```
+
+```go v6
+users, resp, err := client.UserAPI.ListUsers(context.Background()).Execute()
+for resp.HasNextPage() {
+    var nextUsers []okta.User
+    resp, err = resp.Next(&nextUsers)
+    users = append(users, nextUsers...)
+}
+```
+
+</CodeGroup>
+
+### 7. Rate limiting configuration
+
+The v5 options `WithRequestTimeout` and `WithRateLimitMaxRetries` still exist as configuration setters and continue to work the same way when passed to `okta.NewConfiguration`. If you were previously configuring these via the `*okta.Client` struct directly, use the setter functions instead:
+
+```go
+config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+    okta.WithRequestTimeout(45),
+    okta.WithRateLimitMaxRetries(3),
+)
+```
+
+### 8. Mocking in tests
+
+The v5 approach of embedding a mock service struct inside `*okta.Client` no longer works because the API surface is now defined as interfaces. Use interface-based mocking instead.
+
+<CodeGroup>
+
+```go v5
+mockClient := &okta.Client{
+    User: mockUserService,
+}
+```
+
+```go v6
+// Define or use the generated request interface
+type UserAPIInterface interface {
+    GetUser(ctx context.Context, userId string) okta.ApiGetUserRequest
+}
+```
+
+</CodeGroup>
+
+## Common operation patterns
+
+The following examples show complete before-and-after patterns for the most common operations.
+
+### User operations
+
+<CodeGroup>
+
+```go v5 — user operations
+// Create user
+user, resp, err := client.User.CreateUser(ctx, body, nil)
+
+// Update user
+user, resp, err := client.User.UpdateUser(ctx, userId, body, nil)
+
+// Delete user
+resp, err := client.User.DeactivateOrDeleteUser(ctx, userId, nil)
+```
+
+```go v6 — user operations
+// Create user
+user, resp, err := client.UserAPI.CreateUser(context.Background()).
+    Body(*body).
+    Execute()
+
+// Update user
+user, resp, err := client.UserAPI.UpdateUser(context.Background(), userId).
+    User(*body).
+    Execute()
+
+// Delete user (deactivate first, then delete separately)
+resp, err := client.UserAPI.DeactivateUser(context.Background(), userId).
+    Execute()
+```
+
+</CodeGroup>
+
+### Group operations
+
+<CodeGroup>
+
+```go v5 — group operations
+// Create group
+group, resp, err := client.Group.CreateGroup(ctx, body)
+
+// Add user to group
+resp, err := client.Group.AddUserToGroup(ctx, groupId, userId)
+```
+
+```go v6 — group operations
+// Create group
+group, resp, err := client.GroupAPI.AddGroup(context.Background()).
+    Group(*body).
+    Execute()
+
+// Add user to group
+resp, err := client.GroupAPI.AssignUserToGroup(context.Background(), groupId, userId).
+    Execute()
+```
+
+</CodeGroup>
+
+### Application operations
+
+<CodeGroup>
+
+```go v5 — application operations
+// Create application
+app, resp, err := client.Application.CreateApplication(ctx, body, params)
+
+// Assign user to application
+appUser, resp, err := client.Application.AssignUserToApplication(ctx, appId, body)
+```
+
+```go v6 — application operations
+// Create application
+app, resp, err := client.ApplicationAPI.CreateApplication(context.Background()).
+    Application(body).
+    Execute()
+
+// Assign user to application
+appUser, resp, err := client.ApplicationUsersAPI.AssignUserToApplication(
+    context.Background(), appId).
+    AppUser(*body).
+    Execute()
+```
+
+</CodeGroup>
+
+## Patch release fixes
+
+The following issues were resolved in v6 patch releases after the initial v6.0.0 launch:
+
+| Version | Fix |
+|---------|-----|
+| v6.0.1 | Fixed role assignment APIs `oneOf` schema issues in spec |
+| v6.0.2 | Fixed `lastConnection` datatype in agent pools response; fixed invalid DPoP token on retries; added `oneOf` discriminator to IdP protocol response |
+| v6.0.3 | Fixed `CreateGroupPushMapping` request body structure; fixed OIDC application creation with JWKS keys; added `OAuth2ClientJsonWebKeySet` schema and missing JWKS fields |
+| v6.0.4 | Fixed `PolicyPeopleCondition` — `UserCondition` and `GroupCondition` are now optional |
+| v6.1.0 | Updated the OpenAPI spec to v2026.03.0 |
+| v6.1.1 | Fixed `ListPolicies` 200 response |
+| v6.1.2 | Fixed `AppConfig` by adding required type param |
+| v6.1.3 | Fixed `CreatePushGroupMapping` to accept `AppConfig` as a pointer |
+| v6.1.4 | Added `OAuth2ClientJsonWebKeySet` schema for `listJwk` response |
+| v6.1.5 | Fixed `RiskPolicyRuleConditions` — `level` is a required parameter |
+| v6.1.6 | Fixed `UserIdentifierPolicyRuleCondition` — `patterns` and `type` are now optional |
+
+## Deprecations in v6
+
+The following v5 patterns still compile in v6 but are deprecated and will be removed in a future major version:
+
+- Direct field access on models — use getter/setter methods (`profile.GetFirstName()`, `profile.SetFirstName("John")`)
+- `query.Params` structs — use builder chain methods on the request object
+- Some legacy authentication methods that predate the OAuth 2.0 private key flow
+
+## Features carried forward
+
+All major features from v5 are available in v6:
+
+- Configuration via environment variables, YAML files (`~/.okta/okta.yaml`), or inline setters
+- Manual pagination for all collection endpoints
+- Automatic retry on 429 responses with configurable timeout and max retries
+- Web proxy support
+- OAuth 2.0 with Private Key (including DPoP)
+- Bearer token authentication

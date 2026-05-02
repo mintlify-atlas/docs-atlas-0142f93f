@@ -1,0 +1,130 @@
+---
+title: "Handle errors from the Okta Go SDK"
+description: "Learn how the Okta Go SDK surfaces API errors and HTTP failures, including how to inspect error details and handle specific status codes."
+---
+
+Every SDK method that calls the Okta API returns an `error` as its last return value. When the API responds with an HTTP status code of 300 or higher, the SDK wraps the response in a `GenericOpenAPIError` and returns it as that error. For status codes `403`, `404`, and `429`, the SDK also decodes the response body into an `okta.Error` struct and attaches it to the error for structured access.
+
+## Checking for errors
+
+Always check `err != nil` after every API call. Ignoring errors means failures will silently produce zero-value results.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    user, resp, err := client.UserAPI.GetUser(context.Background(), "{userId}").Execute()
+    if err != nil {
+        fmt.Printf("Error getting user: %v\n", err)
+        return
+    }
+    fmt.Printf("User: %+v\n Response: %+v\n\n", user, resp)
+}
+```
+
+## Inspecting the HTTP status code
+
+The second return value from list and get methods is `*APIResponse`, which embeds `*http.Response`. You can inspect `resp.StatusCode` directly to branch on specific HTTP status codes even after checking `err`.
+
+```go
+user, resp, err := client.UserAPI.GetUser(context.Background(), "{userId}").Execute()
+if err != nil {
+    fmt.Printf("API error: %v (HTTP %d)\n", err, resp.StatusCode)
+    switch resp.StatusCode {
+    case 403:
+        fmt.Println("Forbidden: check your API token scopes.")
+    case 404:
+        fmt.Println("User not found.")
+    case 429:
+        fmt.Println("Rate limit hit; the SDK will retry automatically.")
+    }
+    return
+}
+```
+
+<Note>
+The SDK automatically retries `429 Too Many Requests` responses. Your code only receives a `429` error if retries are exhausted or disabled. See [Rate limiting and retries](/concepts/rate-limiting) for details.
+</Note>
+
+## Accessing structured error details
+
+When the SDK decodes a `403`, `404`, or `429` response body, it populates an `okta.Error` struct with the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ErrorCode` | `*string` | An Okta-specific error code (for example, `E0000006`). |
+| `ErrorSummary` | `*string` | A short human-readable description of the error. |
+| `ErrorLink` | `*string` | An Okta error code used as a documentation link reference. |
+| `ErrorId` | `*string` | A unique identifier for the error, useful when contacting Okta Support. |
+| `ErrorCauses` | `[]ErrorCause` | A slice of cause objects with more detail about validation failures. |
+
+To access these fields, use a type assertion to unwrap the `GenericOpenAPIError` and call `Model()`:
+
+```go
+user, _, err := client.UserAPI.GetUser(context.Background(), "{userId}").Execute()
+if err != nil {
+    var apiErr okta.GenericOpenAPIError
+    if errors.As(err, &apiErr) {
+        if oktaErr, ok := apiErr.Model().(okta.Error); ok {
+            fmt.Printf("Okta error code: %s\n", oktaErr.GetErrorCode())
+            fmt.Printf("Okta error summary: %s\n", oktaErr.GetErrorSummary())
+            fmt.Printf("Okta error ID: %s\n", oktaErr.GetErrorId())
+            for _, cause := range oktaErr.GetErrorCauses() {
+                fmt.Printf("  Cause: %s\n", cause.GetErrorSummary())
+            }
+        }
+    }
+    return
+}
+```
+
+## Known issues
+
+### GroupProfile discriminator bug (v6.0.0)
+
+**Root cause:** An OpenAPI spec issue causes the generated code to ignore the `objectClass` discriminator field when deserializing `Group` objects. The code generator uses `anyOf` semantics instead of `oneOf`, so the first matching type (`OktaActiveDirectoryGroupProfile`) is always selected because both profile types share the common fields `name` and `description`.
+
+**Workaround:** Check the `ObjectClass` field on the `Group` object to determine which profile pointer to use:
+
+```go
+func getGroupName(group *okta.Group) string {
+    if group == nil || group.Profile == nil {
+        return ""
+    }
+
+    // Check ObjectClass to determine the correct profile type
+    objectClass := group.GetObjectClass()
+
+    if len(objectClass) > 0 {
+        switch objectClass[0] {
+        case "okta:user_group":
+            // Standard Okta group
+            if group.Profile.OktaUserGroupProfile != nil {
+                return group.Profile.OktaUserGroupProfile.GetName()
+            }
+        case "okta:windows_security_principal":
+            // Active Directory group
+            if group.Profile.OktaActiveDirectoryGroupProfile != nil {
+                return group.Profile.OktaActiveDirectoryGroupProfile.GetName()
+            }
+        }
+    }
+
+    return ""
+}
+```
+
+For additional context and an alternative SDK patch approach, see [GitHub issue #551](https://github.com/okta/okta-sdk-golang/issues/551).

@@ -1,0 +1,344 @@
+---
+title: "Org settings APIs for Okta Go SDK"
+description: "Reference for OrgSettingGeneralAPI, OrgSettingAdminAPI, and related APIs: read and update Okta organization settings using the Go SDK."
+---
+
+The org settings APIs let you read and update configuration for your Okta organization. The Go SDK exposes these capabilities through four focused interfaces: `OrgSettingGeneralAPI` for core org data, `OrgSettingAdminAPI` for admin console behavior, `OrgSettingCommunicationAPI` for email opt-in preferences, and `OrgSettingCustomizationAPI` for end-user UI preferences. Each interface is accessed via the corresponding property on the `*okta.APIClient`.
+
+## OrgSetting model
+
+`OrgSetting` represents the general configuration of an Okta organization.
+
+<ResponseField name="id" type="string">
+  Unique identifier for the org.
+</ResponseField>
+
+<ResponseField name="companyName" type="string">
+  Display name of the organization.
+</ResponseField>
+
+<ResponseField name="subdomain" type="string">
+  The subdomain portion of the org's Okta URL (for example, `acme` in `acme.okta.com`).
+</ResponseField>
+
+<ResponseField name="website" type="string">
+  Public website URL of the organization.
+</ResponseField>
+
+<ResponseField name="address1" type="string">
+  Primary street address of the organization.
+</ResponseField>
+
+<ResponseField name="address2" type="string">
+  Secondary address line.
+</ResponseField>
+
+<ResponseField name="city" type="string">
+  City of the organization.
+</ResponseField>
+
+<ResponseField name="state" type="string">
+  State or province of the organization.
+</ResponseField>
+
+<ResponseField name="postalCode" type="string">
+  Postal code of the organization.
+</ResponseField>
+
+<ResponseField name="country" type="string">
+  Country of the organization.
+</ResponseField>
+
+<ResponseField name="phoneNumber" type="string">
+  Phone number of the organization.
+</ResponseField>
+
+<ResponseField name="supportPhoneNumber" type="string">
+  Support help phone number.
+</ResponseField>
+
+<ResponseField name="endUserSupportHelpURL" type="string">
+  URL shown to end users when they need support.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current status of the org (for example, `ACTIVE`).
+</ResponseField>
+
+<ResponseField name="created" type="time.Time">
+  Timestamp when the org was created.
+</ResponseField>
+
+<ResponseField name="lastUpdated" type="time.Time">
+  Timestamp of the most recent org update.
+</ResponseField>
+
+<ResponseField name="expiresAt" type="time.Time">
+  Expiration timestamp for trial orgs.
+</ResponseField>
+
+---
+
+## OrgSettingGeneralAPI
+
+Accessed via `client.OrgSettingGeneralAPI()`. Provides read and write access to the core org settings at `GET/POST/PUT /api/v1/org`.
+
+### GetOrgSettings
+
+Retrieves the general settings for your Okta org.
+
+```go
+func (a *OrgSettingGeneralAPIService) GetOrgSettings(ctx context.Context) ApiGetOrgSettingsRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context for authentication, cancellation, and deadlines.
+</ParamField>
+
+**Returns** `(*OrgSetting, *APIResponse, error)`
+
+---
+
+### UpdateOrgSettings
+
+Applies a partial update to the org general settings. Only the fields you set on the request body are changed.
+
+```go
+func (a *OrgSettingGeneralAPIService) UpdateOrgSettings(ctx context.Context) ApiUpdateOrgSettingsRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+Chain `.OrgSetting(okta.OrgSetting{...})` on the returned request object to supply the body, then call `.Execute()`.
+
+**Returns** `(*OrgSetting, *APIResponse, error)`
+
+---
+
+### ReplaceOrgSettings
+
+Replaces all org general settings with the values you provide.
+
+```go
+func (a *OrgSettingGeneralAPIService) ReplaceOrgSettings(ctx context.Context) ApiReplaceOrgSettingsRequest
+```
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+Chain `.OrgSetting(okta.OrgSetting{...})` on the returned request object to supply the full replacement body, then call `.Execute()`.
+
+**Returns** `(*OrgSetting, *APIResponse, error)`
+
+---
+
+## OrgSettingAdminAPI
+
+Accessed via `client.OrgSettingAdminAPI()`. Manages admin console assignment behavior and third-party admin access.
+
+### GetAutoAssignAdminAppSetting
+
+Retrieves the setting that controls whether the Okta Admin Console is automatically assigned when an admin role is granted.
+
+```go
+func (a *OrgSettingAdminAPIService) GetAutoAssignAdminAppSetting(ctx context.Context) ApiGetAutoAssignAdminAppSettingRequest
+```
+
+**Returns** `(*AutoAssignAdminAppSetting, *APIResponse, error)`
+
+---
+
+### UpdateAutoAssignAdminAppSetting
+
+Updates the auto-assign admin console setting.
+
+<Note>
+  This setting does not apply to the `SUPER_ADMIN` role. Users assigned `SUPER_ADMIN` always receive access to the Admin Console regardless of this setting.
+</Note>
+
+```go
+func (a *OrgSettingAdminAPIService) UpdateAutoAssignAdminAppSetting(ctx context.Context) ApiUpdateAutoAssignAdminAppSettingRequest
+```
+
+**Returns** `(*AutoAssignAdminAppSetting, *APIResponse, error)`
+
+---
+
+### GetClientPrivilegesSetting
+
+Retrieves the org setting that controls whether the Super Admin role is assigned to new public client apps.
+
+```go
+func (a *OrgSettingAdminAPIService) GetClientPrivilegesSetting(ctx context.Context) ApiGetClientPrivilegesSettingRequest
+```
+
+**Returns** `(*ClientPrivilegesSetting, *APIResponse, error)`
+
+---
+
+### AssignClientPrivilegesSetting
+
+Assigns the Super Admin role as the default role for new public client apps.
+
+```go
+func (a *OrgSettingAdminAPIService) AssignClientPrivilegesSetting(ctx context.Context) ApiAssignClientPrivilegesSettingRequest
+```
+
+**Returns** `(*ClientPrivilegesSetting, *APIResponse, error)`
+
+---
+
+### GetThirdPartyAdminSetting
+
+Retrieves the third-party admin setting for the org.
+
+```go
+func (a *OrgSettingAdminAPIService) GetThirdPartyAdminSetting(ctx context.Context) ApiGetThirdPartyAdminSettingRequest
+```
+
+**Returns** `(*ThirdPartyAdminSetting, *APIResponse, error)`
+
+---
+
+### UpdateThirdPartyAdminSetting
+
+Updates the third-party admin setting. When enabled, third-party admins can perform administrative actions in the Admin Console but cannot receive Okta admin email notifications, contact Okta support, or sign in to the Okta Help Center.
+
+```go
+func (a *OrgSettingAdminAPIService) UpdateThirdPartyAdminSetting(ctx context.Context) ApiUpdateThirdPartyAdminSettingRequest
+```
+
+**Returns** `(*ThirdPartyAdminSetting, *APIResponse, error)`
+
+---
+
+## OrgSettingCommunicationAPI
+
+Accessed via `client.OrgSettingCommunicationAPI()`. Controls whether users in your org receive Okta communication emails.
+
+### GetOktaCommunicationSettings
+
+Retrieves the Okta communication settings for the org.
+
+```go
+func (a *OrgSettingCommunicationAPIService) GetOktaCommunicationSettings(ctx context.Context) ApiGetOktaCommunicationSettingsRequest
+```
+
+**Returns** `(*OrgOktaCommunicationSetting, *APIResponse, error)`
+
+---
+
+### OptInUsersToOktaCommunicationEmails
+
+Opts in all users of the org to Okta communication emails.
+
+```go
+func (a *OrgSettingCommunicationAPIService) OptInUsersToOktaCommunicationEmails(ctx context.Context) ApiOptInUsersToOktaCommunicationEmailsRequest
+```
+
+**Returns** `(*OrgOktaCommunicationSetting, *APIResponse, error)`
+
+---
+
+### OptOutUsersFromOktaCommunicationEmails
+
+Opts out all users of the org from Okta communication emails.
+
+```go
+func (a *OrgSettingCommunicationAPIService) OptOutUsersFromOktaCommunicationEmails(ctx context.Context) ApiOptOutUsersFromOktaCommunicationEmailsRequest
+```
+
+**Returns** `(*OrgOktaCommunicationSetting, *APIResponse, error)`
+
+---
+
+## OrgSettingCustomizationAPI
+
+Accessed via `client.OrgSettingCustomizationAPI()`. Controls end-user UI preferences such as whether the Okta footer is visible on the dashboard.
+
+### GetOrgPreferences
+
+Retrieves the current UI preferences for the org.
+
+```go
+func (a *OrgSettingCustomizationAPIService) GetOrgPreferences(ctx context.Context) ApiGetOrgPreferencesRequest
+```
+
+**Returns** `(*OrgPreferences, *APIResponse, error)`
+
+---
+
+### SetOrgHideOktaUIFooter
+
+Sets the preference to hide the Okta End-User Dashboard footer for all users in the org.
+
+```go
+func (a *OrgSettingCustomizationAPIService) SetOrgHideOktaUIFooter(ctx context.Context) ApiSetOrgHideOktaUIFooterRequest
+```
+
+**Returns** `(*OrgPreferences, *APIResponse, error)`
+
+---
+
+### SetOrgShowOktaUIFooter
+
+Sets the preference to show the Okta UI footer for all users in the org.
+
+```go
+func (a *OrgSettingCustomizationAPIService) SetOrgShowOktaUIFooter(ctx context.Context) ApiSetOrgShowOktaUIFooterRequest
+```
+
+**Returns** `(*OrgPreferences, *APIResponse, error)`
+
+---
+
+## Example: reading and updating org settings
+
+The following example retrieves the current org settings, updates the company website URL, and writes the change back using `UpdateOrgSettings`.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	okta "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+	cfg, err := okta.NewConfiguration()
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := okta.NewAPIClient(cfg)
+	ctx := context.Background()
+
+	// Retrieve current org settings
+	settings, _, err := client.OrgSettingGeneralAPI().
+		GetOrgSettings(ctx).
+		Execute()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Org: %s (subdomain: %s)\n", *settings.CompanyName, *settings.Subdomain)
+
+	// Update the website URL
+	newWebsite := "https://example.com"
+	updated := okta.OrgSetting{}
+	updated.SetWebsite(newWebsite)
+
+	result, _, err := client.OrgSettingGeneralAPI().
+		UpdateOrgSettings(ctx).
+		OrgSetting(updated).
+		Execute()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Updated website: %s\n", *result.Website)
+}
+```

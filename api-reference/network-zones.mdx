@@ -1,0 +1,361 @@
+---
+title: "NetworkZoneAPI — Manage Okta network zones"
+description: "Reference for client.NetworkZoneAPI: create and manage IP and dynamic network zones to control access policies in the Okta Go SDK."
+---
+
+Network zones let you define sets of IP addresses or geographic locations that your Okta policies can use to allow, block, or apply different authentication requirements to users based on where their traffic originates. The `NetworkZoneAPI` provides full lifecycle management for all network zone types, from simple IP allowlists to dynamic zones based on ASNs or geographic regions.
+
+## Zone types
+
+Okta supports three network zone types. You specify the type in the `type` field when creating or reading a zone.
+
+| Type | Go struct | Description |
+|------|-----------|-------------|
+| `IP` | `IPNetworkZone` | Defines specific gateway IPs (CIDR or range) and optional trusted proxy IPs |
+| `DYNAMIC` | `DynamicNetworkZone` | Matches traffic based on ASNs, geographic locations, or proxy type |
+| `DYNAMIC_V2` | `EnhancedDynamicNetworkZone` | Enhanced dynamic zones supporting IP service categories in addition to ASNs and locations |
+
+## Access the API
+
+```go
+client, err := okta.NewClient(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+zoneAPI := client.NetworkZoneAPI
+```
+
+---
+
+## ListNetworkZones
+
+Lists all network zones. Supports pagination and SCIM-style filter expressions to narrow results by `id`, `usage`, or `system`.
+
+```go
+func (a *NetworkZoneAPIService) ListNetworkZones(ctx context.Context) ApiListNetworkZonesRequest
+func (a *NetworkZoneAPIService) ListNetworkZonesExecute(r ApiListNetworkZonesRequest) ([]ListNetworkZones200ResponseInner, *APIResponse, error)
+```
+
+### Query options
+
+<ParamField path="query.Filter" type="string">
+  A URL-encoded SCIM filter expression. Supported attributes: `id`, `usage`, `system`. Example (before encoding): `filter=(usage eq "POLICY")`.
+</ParamField>
+
+<ParamField path="query.After" type="string">
+  End-page cursor for paginated results.
+</ParamField>
+
+<ParamField path="query.Limit" type="integer">
+  Maximum number of zones to return per page.
+</ParamField>
+
+### Returns
+
+<ResponseField name="[]ListNetworkZones200ResponseInner" type="object[]">
+  A list of network zone objects. Each element is a discriminated union resolving to `IPNetworkZone`, `DynamicNetworkZone`, or `EnhancedDynamicNetworkZone` depending on the zone's `type`.
+</ResponseField>
+
+### Example: list all network zones
+
+```go
+zones, resp, err := client.NetworkZoneAPI.
+    ListNetworkZones(ctx).
+    Execute()
+if err != nil {
+    log.Fatalf("ListNetworkZones error: %v", err)
+}
+
+for _, z := range zones {
+    if ipz := z.IPNetworkZone; ipz != nil {
+        fmt.Printf("IP zone: %s (id=%s)\n", ipz.GetName(), ipz.GetId())
+    } else if dz := z.DynamicNetworkZone; dz != nil {
+        fmt.Printf("Dynamic zone: %s (id=%s)\n", dz.GetName(), dz.GetId())
+    }
+}
+_ = resp
+```
+
+---
+
+## GetNetworkZone
+
+Retrieves a single network zone by its ID.
+
+```go
+func (a *NetworkZoneAPIService) GetNetworkZone(ctx context.Context, zoneId string) ApiGetNetworkZoneRequest
+func (a *NetworkZoneAPIService) GetNetworkZoneExecute(r ApiGetNetworkZoneRequest) (*ListNetworkZones200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.zoneId" type="string" required>
+  The `id` of the network zone to retrieve.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListNetworkZones200ResponseInner" type="object">
+  The network zone object. Inspect the `.IPNetworkZone`, `.DynamicNetworkZone`, or `.EnhancedDynamicNetworkZone` field to access type-specific fields.
+</ResponseField>
+
+---
+
+## CreateNetworkZone
+
+Creates a new network zone. The requirements differ by zone type:
+
+- **IP zone**: define at least `gateways` or `proxies`.
+- **Dynamic zone**: define at least one of `asns`, `locations`, or `proxyType`.
+- **Enhanced dynamic zone (`DYNAMIC_V2`)**: define at least one of `asns`, `locations`, or `ipServiceCategories`.
+
+```go
+func (a *NetworkZoneAPIService) CreateNetworkZone(ctx context.Context) ApiCreateNetworkZoneRequest
+func (a *NetworkZoneAPIService) CreateNetworkZoneExecute(r ApiCreateNetworkZoneRequest) (*ListNetworkZones200ResponseInner, *APIResponse, error)
+```
+
+### Request body options
+
+<ParamField path="body.Zone" type="object" required>
+  A `ListNetworkZones200ResponseInner` containing the populated zone variant. Must include `name` (string) and `type` (string) in the embedded `NetworkZone` base.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListNetworkZones200ResponseInner" type="object">
+  The created network zone.
+</ResponseField>
+
+### Example: create an IP network zone
+
+```go
+gateways := []okta.NetworkZoneAddress{
+    {
+        Type:  okta.PtrString("CIDR"),
+        Value: okta.PtrString("192.168.100.0/24"),
+    },
+    {
+        Type:  okta.PtrString("RANGE"),
+        Value: okta.PtrString("10.0.0.1-10.0.0.50"),
+    },
+}
+
+zone := okta.ListNetworkZones200ResponseInner{
+    IPNetworkZone: &okta.IPNetworkZone{
+        NetworkZone: okta.NetworkZone{
+            Name: "Corporate Office",
+            Type: "IP",
+        },
+        Gateways: gateways,
+    },
+}
+
+created, resp, err := client.NetworkZoneAPI.
+    CreateNetworkZone(ctx).
+    Zone(zone).
+    Execute()
+if err != nil {
+    log.Fatalf("CreateNetworkZone error: %v", err)
+}
+fmt.Printf("Created zone id: %s\n", created.IPNetworkZone.GetId())
+_ = resp
+```
+
+---
+
+## ReplaceNetworkZone
+
+Fully replaces a network zone configuration. The replacement zone type must match the existing zone type. You can also change the `usage` attribute (`POLICY` or `BLOCKLIST`) with this endpoint.
+
+```go
+func (a *NetworkZoneAPIService) ReplaceNetworkZone(ctx context.Context, zoneId string) ApiReplaceNetworkZoneRequest
+func (a *NetworkZoneAPIService) ReplaceNetworkZoneExecute(r ApiReplaceNetworkZoneRequest) (*ListNetworkZones200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.zoneId" type="string" required>
+  The `id` of the network zone to replace.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListNetworkZones200ResponseInner" type="object">
+  The updated network zone.
+</ResponseField>
+
+<Note>
+  To enable IP exempt zone behavior on the `DefaultExemptIpZone`, set `useAsExemptList` to `true` in your `IPNetworkZone` payload. You cannot add trusted proxy IPs to this zone, delete it, or create additional exempt IP zones.
+</Note>
+
+---
+
+## DeleteNetworkZone
+
+Permanently deletes a network zone.
+
+```go
+func (a *NetworkZoneAPIService) DeleteNetworkZone(ctx context.Context, zoneId string) ApiDeleteNetworkZoneRequest
+func (a *NetworkZoneAPIService) DeleteNetworkZoneExecute(r ApiDeleteNetworkZoneRequest) (*APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.zoneId" type="string" required>
+  The `id` of the network zone to delete.
+</ParamField>
+
+<Warning>
+  You cannot delete a network zone that is referenced by an active policy or policy rule. On Okta Identity Engine orgs, you also cannot delete a zone with status `ACTIVE`. Deactivate the zone first.
+</Warning>
+
+---
+
+## ActivateNetworkZone
+
+Activates a network zone by its ID.
+
+```go
+func (a *NetworkZoneAPIService) ActivateNetworkZone(ctx context.Context, zoneId string) ApiActivateNetworkZoneRequest
+func (a *NetworkZoneAPIService) ActivateNetworkZoneExecute(r ApiActivateNetworkZoneRequest) (*ListNetworkZones200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.zoneId" type="string" required>
+  The `id` of the network zone to activate.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListNetworkZones200ResponseInner" type="object">
+  The updated zone with `status` set to `ACTIVE`.
+</ResponseField>
+
+---
+
+## DeactivateNetworkZone
+
+Deactivates a network zone by its ID.
+
+```go
+func (a *NetworkZoneAPIService) DeactivateNetworkZone(ctx context.Context, zoneId string) ApiDeactivateNetworkZoneRequest
+func (a *NetworkZoneAPIService) DeactivateNetworkZoneExecute(r ApiDeactivateNetworkZoneRequest) (*ListNetworkZones200ResponseInner, *APIResponse, error)
+```
+
+### Parameters
+
+<ParamField path="path.zoneId" type="string" required>
+  The `id` of the network zone to deactivate.
+</ParamField>
+
+### Returns
+
+<ResponseField name="*ListNetworkZones200ResponseInner" type="object">
+  The updated zone with `status` set to `INACTIVE`.
+</ResponseField>
+
+---
+
+## Model reference
+
+### NetworkZone (base type)
+
+All zone variants embed this base struct.
+
+<ResponseField name="id" type="string">
+  Unique identifier. Read-only; set by Okta on creation.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Unique display name for the zone.
+</ResponseField>
+
+<ResponseField name="type" type="string" required>
+  Zone type: `IP`, `DYNAMIC`, or `DYNAMIC_V2`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `ACTIVE` or `INACTIVE`.
+</ResponseField>
+
+<ResponseField name="system" type="boolean">
+  `true` for Okta-managed default zones (for example, `LegacyIpZone`, `BlockedIpZone`). Admins can edit but not delete system zones.
+</ResponseField>
+
+<ResponseField name="usage" type="string">
+  `POLICY` (used in policy conditions) or `BLOCKLIST` (blocks traffic from listed IPs).
+</ResponseField>
+
+<ResponseField name="created" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="lastUpdated" type="string">
+  ISO 8601 last-modified timestamp.
+</ResponseField>
+
+---
+
+### IPNetworkZone fields
+
+`IPNetworkZone` embeds `NetworkZone` and adds the following:
+
+<ResponseField name="gateways" type="NetworkZoneAddress[]">
+  IP addresses (CIDR or range) that define the zone's origin addresses. Maximum 150 entries for admin-created zones; 5000 for the default system IP zone.
+</ResponseField>
+
+<ResponseField name="proxies" type="NetworkZoneAddress[]">
+  Trusted proxy IPs that can forward requests from gateway addresses. Okta Threat Insights automatically trusts these proxies and uses them to identify the real client IP. Maximum 150 entries for admin-created zones; 5000 for the default system IP zone.
+</ResponseField>
+
+<ResponseField name="useAsExemptList" type="boolean">
+  Only valid on `DefaultExemptIpZone`. When `true`, IPs in this zone bypass blocklists, ThreatInsight blocks, and IP change events.
+</ResponseField>
+
+Each `NetworkZoneAddress` element has:
+
+<ResponseField name="type" type="string">
+  `CIDR` for CIDR notation, or `RANGE` for an IP range (`startIP-endIP`).
+</ResponseField>
+
+<ResponseField name="value" type="string">
+  The IP address or range value, for example `192.168.0.0/16` or `10.0.0.1-10.0.0.100`.
+</ResponseField>
+
+---
+
+### DynamicNetworkZone fields
+
+`DynamicNetworkZone` embeds `NetworkZone` and adds:
+
+<ResponseField name="asns" type="string[]">
+  Autonomous System Numbers (ASNs) that define the zone. Traffic from these ASNs matches the zone.
+</ResponseField>
+
+<ResponseField name="locations" type="NetworkZoneLocation[]">
+  Geographic locations (country and optional region) that define the zone.
+</ResponseField>
+
+<ResponseField name="proxyType" type="string">
+  Proxy classification for matching traffic: `Any`, `Tor`, `NotTorAnonymizer`, or `TorAnonymizer`.
+</ResponseField>
+
+---
+
+### EnhancedDynamicNetworkZone fields
+
+`EnhancedDynamicNetworkZone` embeds `NetworkZone` and adds:
+
+<ResponseField name="asns" type="string[]">
+  ASNs included in the zone.
+</ResponseField>
+
+<ResponseField name="locations" type="object[]">
+  Geographic locations defining the zone.
+</ResponseField>
+
+<ResponseField name="ipServiceCategories" type="object[]">
+  IP service categories (for example, anonymizers or hosting providers) included in the zone. Only available with `DYNAMIC_V2`.
+</ResponseField>

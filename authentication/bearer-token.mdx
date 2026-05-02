@@ -1,0 +1,73 @@
+---
+title: "Authenticate with a Bearer token"
+description: "Use an Okta-issued Bearer token to authenticate the Go SDK when you exchange credentials through an OIDC app or authorization code flow."
+---
+
+Bearer token mode lets you initialize the SDK with an access token that your application has already obtained from Okta — for example, after completing an authorization code flow in a web application or a native app. Instead of the SDK acquiring tokens on its own, you exchange credentials through a supported Okta app and pass the resulting token directly to the client.
+
+## How Bearer tokens differ from other auth modes
+
+Bearer tokens are scoped to an individual Okta application, not to the entire organization. This means a Bearer token can only perform the actions that the issuing app is authorized for, determined both by the scopes configured on the app and the scopes requested during authorization. This is intentional: it makes Bearer token mode appropriate for user-facing or app-specific workflows where you want to act on behalf of an authenticated session rather than as an unattended service.
+
+<Info>
+  Because a Bearer token is already scoped implicitly, you do not need to call `WithScopes()` when initializing the client in Bearer mode.
+</Info>
+
+## Supported application types
+
+Bearer tokens are issued by Okta for the following OIDC application types. API Services applications (service-to-service) are natively supported by the SDK using [Private Key mode](/authentication/oauth2-private-key) instead.
+
+| Sign-in method | Application type | Grant flow |
+|---|---|---|
+| OIDC - OpenID Connect | Web Application | [Authorization code flow with client secret](https://developer.okta.com/docs/guides/implement-grant-type/authcode/main/) |
+| OIDC - OpenID Connect | Single-Page Application | [Authorization code flow with PKCE](https://developer.okta.com/docs/guides/implement-grant-type/authcodepkce/main/) |
+| OIDC - OpenID Connect | Native Application | [Authorization code flow with client secret](https://developer.okta.com/docs/guides/implement-grant-type/authcode/main/) or [Authorization code flow with PKCE](https://developer.okta.com/docs/guides/implement-grant-type/authcodepkce/main/) |
+| API Services | N/A | Natively supported by SDK using `PrivateKey` authorization mode |
+
+## Implementation
+
+<Steps>
+  <Step title="Create an Okta app">
+    In the Okta Admin Console, create an application that matches your use case (Web, SPA, or Native). Configure the scopes your integration requires on the application settings.
+  </Step>
+
+  <Step title="Obtain an authorization code">
+    Direct the user (or your service) to the [Org Authorization Server](https://developer.okta.com/docs/concepts/auth-servers/#org-authorization-server) authorization endpoint to obtain an authorization code. This step is handled by your application's OAuth 2.0 client library — it is outside the scope of the SDK.
+  </Step>
+
+  <Step title="Exchange the authorization code for a Bearer token">
+    Post the authorization code to Okta's token endpoint to receive an access token. This exchange is also handled by your OAuth client or a direct HTTP call — the SDK does not perform this step for Bearer mode.
+  </Step>
+
+  <Step title="Initialize the SDK client with the Bearer token">
+    Pass `"Bearer"` as the authorization mode and supply the access token with `WithToken()`:
+
+    ```go
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithAuthorizationMode("Bearer"),
+        okta.WithClientId("{client_id}"),
+        okta.WithToken("{token}"),
+    )
+    if err != nil {
+      fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+    ```
+
+    Replace `{token}` with the access token string you received in the previous step.
+  </Step>
+</Steps>
+
+## Configuration setter reference
+
+| Setter | Description |
+|--------|-------------|
+| `WithAuthorizationMode("Bearer")` | Enables Bearer token mode |
+| `WithClientId(clientId string)` | Client ID of the Okta application |
+| `WithToken(token string)` | The Bearer access token string |
+
+## Related pages
+
+- [OAuth 2.0 with a private key pair](/authentication/oauth2-private-key) — service-to-service authentication without a user session
+- [Authenticate with an Okta API token](/authentication/api-token) — simpler token-based auth for internal tooling

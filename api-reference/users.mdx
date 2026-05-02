@@ -1,0 +1,500 @@
+---
+title: "UserAPI — Okta user management methods"
+description: "Reference for client.UserAPI: create, read, update, delete, and manage user lifecycle, factors, and credentials in the Okta Go SDK."
+---
+
+The `UserAPI` interface provides all methods needed to manage users in your Okta org. You access it through the client returned by `okta.NewAPIClient`. Alongside `UserAPI`, the `UserLifecycleAPI` handles status transitions and the `UserFactorAPI` manages MFA enrollments. All methods follow the same request-builder pattern: call the method to obtain a request object, chain option methods, then call `.Execute()` to send the request.
+
+## UserAPI methods
+
+### CreateUser
+
+Creates a new user in your Okta org with or without credentials. Activation is an asynchronous operation — the user's `transitioningToStatus` is `ACTIVE` until the process completes.
+
+```go
+func (a *UserAPIService) CreateUser(ctx context.Context) ApiCreateUserRequest
+func (a *UserAPIService) CreateUserExecute(r ApiCreateUserRequest) (*User, *APIResponse, error)
+```
+
+<ParamField path="body" type="CreateUserRequest" required>
+  The user profile and optional credentials. `Profile` is required; see the `UserProfile` type below.
+</ParamField>
+
+<ParamField path="activate" type="bool" default="true">
+  When `true`, runs an activation lifecycle operation immediately after creation and sends the user an activation email.
+</ParamField>
+
+<ParamField path="provider" type="bool" default="false">
+  Set to `true` when creating a user with a specified external authentication provider.
+</ParamField>
+
+<ParamField path="nextLogin" type="string">
+  When combined with `activate=true`, setting this to `changePassword` creates an active user whose password is immediately expired. The user must change it on first sign-in.
+</ParamField>
+
+<ResponseField name="*User" type="object">
+  The created user record.
+</ResponseField>
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    cfg, _ := okta.NewConfiguration()
+    client := okta.NewAPIClient(cfg)
+
+    firstName := "Jane"
+    lastName := "Doe"
+    email := "jane.doe@example.com"
+    login := "jane.doe@example.com"
+
+    profile := okta.NewUserProfile()
+    profile.SetFirstName(firstName)
+    profile.SetLastName(lastName)
+    profile.SetEmail(email)
+    profile.SetLogin(login)
+
+    body := okta.NewCreateUserRequest(*profile)
+
+    user, resp, err := client.UserAPI.CreateUser(context.Background()).
+        Body(*body).
+        Activate(true).
+        Execute()
+    if err != nil {
+        fmt.Printf("Error creating user: %v\n", err)
+        return
+    }
+    fmt.Printf("Created user %s (status: %s)\n", user.GetId(), user.GetStatus())
+    _ = resp
+}
+```
+
+---
+
+### GetUser
+
+Retrieves a user by ID, login, or login shortname. You can also pass `"me"` as the ID to return the user linked to the current API token.
+
+```go
+func (a *UserAPIService) GetUser(ctx context.Context, id string) ApiGetUserRequest
+func (a *UserAPIService) GetUserExecute(r ApiGetUserRequest) (*UserGetSingleton, *APIResponse, error)
+```
+
+<ParamField path="id" type="string" required>
+  The user's Okta ID, full login, or unambiguous login shortname. URL-encode logins that contain special characters.
+</ParamField>
+
+<ParamField path="expand" type="string">
+  Include extra data in `_embedded`. Accepted values: `blocks`, `classification`.
+</ParamField>
+
+<ResponseField name="*UserGetSingleton" type="object">
+  The full user object.
+</ResponseField>
+
+```go
+user, _, err := client.UserAPI.GetUser(context.Background(), "00u1ab2cd3EF4GH5IJ6K").Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println(user.GetProfile().GetEmail())
+```
+
+---
+
+### ListUsers
+
+Lists users in your org with pagination. Without a query parameter, deprovisioned users are omitted. Use `Search`, `Filter`, or `Q` to narrow results or include deprovisioned users.
+
+```go
+func (a *UserAPIService) ListUsers(ctx context.Context) ApiListUsersRequest
+func (a *UserAPIService) ListUsersExecute(r ApiListUsersRequest) ([]User, *APIResponse, error)
+```
+
+<ParamField path="search" type="string">
+  A SCIM filter expression. Supports all user profile properties, top-level fields (`id`, `status`, `created`, `activated`, `statusChanged`, `lastUpdated`), `type.id`, and array-valued properties. Preferred over `filter` for complex queries. Results include deprovisioned users.
+</ParamField>
+
+<ParamField path="filter" type="string">
+  A limited filter expression. Supported properties: `status`, `lastUpdated`, `id`, `profile.login`, `profile.email`, `profile.firstName`, `profile.lastName`. Supports `eq` and (for `lastUpdated`) range operators. Results include deprovisioned users.
+</ParamField>
+
+<ParamField path="q" type="string">
+  Finds users whose `firstName`, `lastName`, or `email` starts with the given string. Does not support pagination. Not suitable for large datasets.
+</ParamField>
+
+<ParamField path="limit" type="int32" default="200">
+  Maximum number of results to return per page.
+</ParamField>
+
+<ParamField path="after" type="string">
+  Opaque cursor for pagination, obtained from the `Link` response header.
+</ParamField>
+
+<ParamField path="sortBy" type="string">
+  Property to sort by (search queries only). For example, `profile.lastName`.
+</ParamField>
+
+<ParamField path="sortOrder" type="string">
+  Sort direction: `asc` or `desc` (search queries only).
+</ParamField>
+
+<ParamField path="fields" type="string">
+  Comma-separated list of fields to include. Specify profile sub-fields with `profile:(firstName, email)`. The `id` field is always included.
+</ParamField>
+
+<ResponseField name="[]User" type="array">
+  A slice of user objects matching the query.
+</ResponseField>
+
+```go
+// List active users whose last name starts with "Smith"
+users, _, err := client.UserAPI.ListUsers(context.Background()).
+    Search(`status eq "ACTIVE" and profile.lastName sw "Smith"`).
+    Limit(50).
+    Execute()
+if err != nil {
+    panic(err)
+}
+for _, u := range users {
+    fmt.Printf("%s %s\n", u.GetProfile().GetFirstName(), u.GetProfile().GetLastName())
+}
+```
+
+---
+
+### UpdateUser
+
+Partially updates a user's profile or credentials. Only the fields you include in the request body are changed; unspecified fields remain unchanged.
+
+```go
+func (a *UserAPIService) UpdateUser(ctx context.Context, id string) ApiUpdateUserRequest
+func (a *UserAPIService) UpdateUserExecute(r ApiUpdateUserRequest) (*User, *APIResponse, error)
+```
+
+<ParamField path="id" type="string" required>
+  The user's Okta ID, login, or login shortname.
+</ParamField>
+
+<ParamField path="body" type="UpdateUserRequest" required>
+  Fields to update. Includes optional `profile` and `credentials` sub-objects.
+</ParamField>
+
+<ResponseField name="*User" type="object">
+  The updated user object.
+</ResponseField>
+
+```go
+profile := okta.NewUserProfile()
+profile.SetTitle("Senior Engineer")
+
+body := okta.NewUpdateUserRequest()
+body.SetProfile(*profile)
+
+updated, _, err := client.UserAPI.UpdateUser(context.Background(), "00u1ab2cd3EF4GH5IJ6K").
+    Body(*body).
+    Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println(updated.GetProfile().GetTitle())
+```
+
+---
+
+### ReplaceUser
+
+Fully replaces a user's profile and credentials using strict-update (PUT) semantics. Any profile property absent from the request body is deleted.
+
+```go
+func (a *UserAPIService) ReplaceUser(ctx context.Context, id string) ApiReplaceUserRequest
+func (a *UserAPIService) ReplaceUserExecute(r ApiReplaceUserRequest) (*User, *APIResponse, error)
+```
+
+<Warning>
+  Use `UpdateUser` for partial updates. `ReplaceUser` deletes any profile property you omit from the request body.
+</Warning>
+
+---
+
+### DeleteUser
+
+Permanently deletes a user. The user must be in the `DEPROVISIONED` state. If called on an active user, Okta deactivates the user instead; you must call `DeleteUser` a second time to permanently remove them.
+
+```go
+func (a *UserAPIService) DeleteUser(ctx context.Context, id string) ApiDeleteUserRequest
+func (a *UserAPIService) DeleteUserExecute(r ApiDeleteUserRequest) (*APIResponse, error)
+```
+
+<ParamField path="id" type="string" required>
+  The user's Okta ID, login, or login shortname.
+</ParamField>
+
+<ParamField path="sendEmail" type="bool">
+  When `true`, sends a deactivation email to the admin.
+</ParamField>
+
+<Warning>
+  Deleting a user is irreversible. Deactivation removes the user from all assigned applications, which may destroy application-owned data such as email or files.
+</Warning>
+
+```go
+// First call deactivates an active user; second call permanently deletes.
+client.UserLifecycleAPI.DeactivateUser(context.Background(), userId).Execute()
+client.UserAPI.DeleteUser(context.Background(), userId).Execute()
+```
+
+---
+
+## UserLifecycleAPI methods
+
+The `UserLifecycleAPI` manages status transitions. Access it via `client.UserLifecycleAPI`.
+
+### ActivateUser
+
+Activates a user with `STAGED` or `DEPROVISIONED` status. If `sendEmail` is `true`, the user receives an activation email with a one-time token.
+
+```go
+func (a *UserLifecycleAPIService) ActivateUser(ctx context.Context, id string) ApiActivateUserRequest
+func (a *UserLifecycleAPIService) ActivateUserExecute(r ApiActivateUserRequest) (*UserActivationToken, *APIResponse, error)
+```
+
+<ParamField path="id" type="string" required>
+  The user's Okta ID, login, or login shortname.
+</ParamField>
+
+<ParamField path="sendEmail" type="bool" required>
+  When `true`, Okta sends the user an activation email. When `false`, the activation token is returned in the response.
+</ParamField>
+
+<ResponseField name="*UserActivationToken" type="object">
+  Contains `activationUrl` and `activationToken`. Only populated when `sendEmail` is `false`.
+</ResponseField>
+
+```go
+token, _, err := client.UserLifecycleAPI.ActivateUser(context.Background(), userId).
+    SendEmail(false).
+    Execute()
+if err != nil {
+    panic(err)
+}
+fmt.Println("Activation URL:", token.GetActivationUrl())
+```
+
+---
+
+### DeactivateUser
+
+Deactivates a user. The user is deprovisioned from all assigned applications.
+
+```go
+func (a *UserLifecycleAPIService) DeactivateUser(ctx context.Context, id string) ApiDeactivateUserRequest
+func (a *UserLifecycleAPIService) DeactivateUserExecute(r ApiDeactivateUserRequest) (*APIResponse, error)
+```
+
+---
+
+### SuspendUser
+
+Suspends an `ACTIVE` user. Suspended users cannot sign in. Their group and app assignments are retained.
+
+```go
+func (a *UserLifecycleAPIService) SuspendUser(ctx context.Context, id string) ApiSuspendUserRequest
+func (a *UserLifecycleAPIService) SuspendUserExecute(r ApiSuspendUserRequest) (*APIResponse, error)
+```
+
+---
+
+### UnsuspendUser
+
+Returns a `SUSPENDED` user to `ACTIVE` status.
+
+```go
+func (a *UserLifecycleAPIService) UnsuspendUser(ctx context.Context, id string) ApiUnsuspendUserRequest
+func (a *UserLifecycleAPIService) UnsuspendUserExecute(r ApiUnsuspendUserRequest) (*APIResponse, error)
+```
+
+---
+
+### UnlockUser
+
+Unlocks a user with `LOCKED_OUT` status or one with `ACTIVE` status blocked by unknown-device policy. Only works for Okta-sourced users (not Active Directory).
+
+```go
+func (a *UserLifecycleAPIService) UnlockUser(ctx context.Context, id string) ApiUnlockUserRequest
+func (a *UserLifecycleAPIService) UnlockUserExecute(r ApiUnlockUserRequest) (*APIResponse, error)
+```
+
+---
+
+### ResetPassword
+
+Generates a one-time token that the user can exchange to set a new password.
+
+```go
+func (a *UserLifecycleAPIService) ResetPassword(ctx context.Context, id string) ApiResetPasswordRequest
+func (a *UserLifecycleAPIService) ResetPasswordExecute(r ApiResetPasswordRequest) (*ResetPasswordToken, *APIResponse, error)
+```
+
+---
+
+### ResetFactors
+
+Resets all MFA factor enrollments for a user, returning them to the unenrolled state. The user's status remains `ACTIVE`.
+
+```go
+func (a *UserLifecycleAPIService) ResetFactors(ctx context.Context, id string) ApiResetFactorsRequest
+func (a *UserLifecycleAPIService) ResetFactorsExecute(r ApiResetFactorsRequest) (*APIResponse, error)
+```
+
+---
+
+## UserFactorAPI methods
+
+The `UserFactorAPI` manages MFA factor enrollments. Access it via `client.UserFactorAPI`.
+
+### ListFactors
+
+Lists all enrolled factors for a user that are included in the highest-priority authenticator enrollment policy applied to that user.
+
+```go
+func (a *UserFactorAPIService) ListFactors(ctx context.Context, userId string) ApiListFactorsRequest
+func (a *UserFactorAPIService) ListFactorsExecute(r ApiListFactorsRequest) ([]ListFactors200ResponseInner, *APIResponse, error)
+```
+
+<ParamField path="userId" type="string" required>
+  The Okta user ID.
+</ParamField>
+
+<ResponseField name="[]ListFactors200ResponseInner" type="array">
+  A slice of enrolled factor objects. Each element may be a different factor type (TOTP, push, SMS, etc.).
+</ResponseField>
+
+```go
+factors, _, err := client.UserFactorAPI.ListFactors(context.Background(), userId).Execute()
+if err != nil {
+    panic(err)
+}
+for _, f := range factors {
+    if f.UserFactorToken != nil {
+        fmt.Println("Token factor status:", f.UserFactorToken.GetStatus())
+    }
+}
+```
+
+---
+
+### EnrollFactor
+
+Enrolls a supported factor for a user. All responses return the enrolled factor with a status of either `PENDING_ACTIVATION` or `ACTIVE`.
+
+```go
+func (a *UserFactorAPIService) EnrollFactor(ctx context.Context, userId string) ApiEnrollFactorRequest
+func (a *UserFactorAPIService) EnrollFactorExecute(r ApiEnrollFactorRequest) (*ListFactors200ResponseInner, *APIResponse, error)
+```
+
+<ParamField path="userId" type="string" required>
+  The Okta user ID.
+</ParamField>
+
+<ParamField path="body" type="UserFactor" required>
+  The factor to enroll. The `factorType` and `provider` fields determine the specific factor.
+</ParamField>
+
+<ParamField path="updatePhone" type="bool">
+  Indicates whether to update the user's phone number when enrolling an SMS or call factor.
+</ParamField>
+
+---
+
+### VerifyFactor
+
+Verifies an OTP for a factor. Factors such as `call`, `email`, `push`, `sms`, `u2f`, and `webauthn` require you to issue a challenge first (by calling `VerifyFactor` with an empty body), then call again with the OTP.
+
+```go
+func (a *UserFactorAPIService) VerifyFactor(ctx context.Context, userId string, factorId string) ApiVerifyFactorRequest
+func (a *UserFactorAPIService) VerifyFactorExecute(r ApiVerifyFactorRequest) (*VerifyUserFactorResponse, *APIResponse, error)
+```
+
+---
+
+### UnenrollFactor
+
+Unenrolls an existing factor for a user. Unenrolling `push` or `signed_nonce` factors also unenrolls any related `totp` and Okta Verify push factors.
+
+```go
+func (a *UserFactorAPIService) UnenrollFactor(ctx context.Context, userId string, factorId string) ApiUnenrollFactorRequest
+func (a *UserFactorAPIService) UnenrollFactorExecute(r ApiUnenrollFactorRequest) (*APIResponse, error)
+```
+
+---
+
+## The UserProfile type
+
+`UserProfile` maps to the [SCIM Core Schema](https://datatracker.ietf.org/doc/html/rfc7643) and carries both built-in and custom profile properties. All built-in fields have typed getter/setter methods. Custom attributes are stored in `AdditionalProperties` and are accessible by key after unmarshaling.
+
+```go
+type UserProfile struct {
+    Login           *string        `json:"login,omitempty"`           // required; unique identifier
+    Email           *string        `json:"email,omitempty"`           // required; primary email
+    FirstName       NullableString `json:"firstName,omitempty"`
+    LastName        NullableString `json:"lastName,omitempty"`
+    DisplayName     NullableString `json:"displayName,omitempty"`
+    MobilePhone     NullableString `json:"mobilePhone,omitempty"`
+    SecondEmail     NullableString `json:"secondEmail,omitempty"`
+    Title           NullableString `json:"title,omitempty"`
+    Department      *string        `json:"department,omitempty"`
+    Organization    NullableString `json:"organization,omitempty"`
+    Manager         NullableString `json:"manager,omitempty"`
+    ManagerId       NullableString `json:"managerId,omitempty"`
+    Locale          *string        `json:"locale,omitempty"`          // e.g. "en_US"
+    Timezone        NullableString `json:"timezone,omitempty"`
+    UserType        NullableString `json:"userType,omitempty"`        // descriptive label only
+    EmployeeNumber  *string        `json:"employeeNumber,omitempty"`
+    CostCenter      NullableString `json:"costCenter,omitempty"`
+    Division        NullableString `json:"division,omitempty"`
+    StreetAddress   NullableString `json:"streetAddress,omitempty"`
+    City            NullableString `json:"city,omitempty"`
+    State           NullableString `json:"state,omitempty"`
+    ZipCode         NullableString `json:"zipCode,omitempty"`
+    CountryCode     NullableString `json:"countryCode,omitempty"`
+    PostalAddress   NullableString `json:"postalAddress,omitempty"`
+    ProfileUrl      NullableString `json:"profileUrl,omitempty"`
+    AdditionalProperties map[string]interface{}
+}
+```
+
+Custom profile attributes defined in the Schema are stored in `AdditionalProperties`. Set them directly on the map before calling `CreateUser` or `UpdateUser`:
+
+```go
+profile := okta.NewUserProfile()
+profile.SetLogin("jane@example.com")
+profile.SetEmail("jane@example.com")
+profile.SetFirstName("Jane")
+profile.SetLastName("Doe")
+
+// Set a custom attribute named "employeeRegion"
+profile.AdditionalProperties = map[string]interface{}{
+    "employeeRegion": "EMEA",
+}
+```
+
+## The CreateUserRequest type
+
+`CreateUserRequest` is the body passed to `CreateUser`. The `Profile` field is required.
+
+```go
+type CreateUserRequest struct {
+    Profile     UserProfile              `json:"profile"`               // required
+    Credentials *UserCredentialsWritable `json:"credentials,omitempty"` // optional password/recovery question
+    GroupIds    []string                 `json:"groupIds,omitempty"`    // assign to groups at creation
+    RealmId     *string                  `json:"realmId,omitempty"`
+    Type        *CreateUserRequestType   `json:"type,omitempty"`        // assign a non-default user type
+}
+```

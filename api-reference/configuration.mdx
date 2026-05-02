@@ -1,0 +1,401 @@
+---
+title: "Configuration options for the Okta Go SDK"
+description: "Complete reference for all NewConfiguration() option setters, default values, YAML keys, and environment variable names for the Okta Go SDK."
+---
+
+`NewConfiguration` accepts zero or more `ConfigSetter` functions that each mutate the `*Configuration` before it is used to construct the API client. Every option can also be set through a YAML file or an environment variable, and programmatic setters take the highest precedence. Call `NewConfiguration` once at application startup and reuse the resulting `*Configuration` for the lifetime of the process.
+
+```go
+import "github.com/okta/okta-sdk-golang/v6/okta"
+
+cfg, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+)
+if err != nil {
+    // handle error
+}
+client := okta.NewAPIClient(cfg)
+```
+
+## Configuration precedence
+
+When the same option is set in multiple places the SDK resolves them in this order (highest wins):
+
+1. Programmatic `ConfigSetter` functions passed to `NewConfiguration`
+2. Environment variables (`OKTA_CLIENT_*`)
+3. Application-level YAML file (`.okta.yaml` in the project root)
+4. System-level YAML file (`~/.okta/okta.yaml`)
+
+## Default values
+
+The following table lists every option that has a non-zero default.
+
+| Option | Default |
+|--------|---------|
+| `WithConnectionTimeout` | `60` seconds |
+| `WithCache` | `true` |
+| `WithCacheTtl` | `300` seconds |
+| `WithCacheTti` | `300` seconds |
+| `WithUserAgentExtra` | `""` (empty) |
+| `WithTestingDisableHttpsCheck` | `false` |
+| `WithRequestTimeout` | `0` (no timeout) |
+| `WithRateLimitMaxBackOff` | `30` seconds |
+| `WithRateLimitMaxRetries` | `2` |
+| `WithAuthorizationMode` | `"SSWS"` |
+
+## Connection and org settings
+
+<ParamField path="WithOrgUrl" type="string" required>
+  The base URL of your Okta organization, for example `https://dev-123456.okta.com`. All API requests are sent to this host.
+
+  **YAML key:** `okta.client.orgUrl`  
+  **Environment variable:** `OKTA_CLIENT_ORGURL`
+
+  ```go
+  okta.WithOrgUrl("https://dev-123456.okta.com")
+  ```
+</ParamField>
+
+<ParamField path="WithConnectionTimeout" type="int64" default="60">
+  Maximum number of seconds to wait for the HTTP connection to be established. Set to `0` to disable the connection timeout.
+
+  **YAML key:** `okta.client.connectionTimeout`  
+  **Environment variable:** `OKTA_CLIENT_CONNECTION_TIMEOUT`
+
+  ```go
+  okta.WithConnectionTimeout(30)
+  ```
+</ParamField>
+
+<ParamField path="WithRequestTimeout" type="int64" default="0">
+  Maximum number of seconds to wait for an HTTP response including retries. When set to `0` there is no overall request timeout. Works together with `WithRateLimitMaxRetries`: the SDK stops retrying when either limit is reached.
+
+  **YAML key:** `okta.client.requestTimeout`  
+  **Environment variable:** `OKTA_CLIENT_REQUEST_TIMEOUT`
+
+  ```go
+  okta.WithRequestTimeout(45)
+  ```
+</ParamField>
+
+<ParamField path="WithHttpClientPtr" type="*http.Client">
+  Replaces the SDK's default `net/http` client with your own. Use this when you need custom TLS configuration, a custom transport, or test instrumentation.
+
+  ```go
+  import "net/http"
+
+  customClient := &http.Client{Timeout: 10 * time.Second}
+  okta.WithHttpClientPtr(customClient)
+  ```
+</ParamField>
+
+---
+
+## Authentication
+
+<ParamField path="WithToken" type="string">
+  The Okta API token (SSWS token) used when `AuthorizationMode` is `"SSWS"`. Generate a token in the Okta Admin Console under **Security > API > Tokens**.
+
+  **YAML key:** `okta.client.token`  
+  **Environment variable:** `OKTA_CLIENT_TOKEN`
+
+  ```go
+  okta.WithToken("00abc...xyz")
+  ```
+</ParamField>
+
+<ParamField path="WithAuthorizationMode" type="string" default='"SSWS"'>
+  Selects the authentication strategy. Accepted values:
+
+  - `"SSWS"` — API Token authentication (default)
+  - `"PrivateKey"` — OAuth 2.0 with a PEM private key
+  - `"JWT"` — OAuth 2.0 with a signed JWT client assertion
+  - `"Bearer"` — pass a raw Bearer token
+
+  **YAML key:** `okta.client.authorizationMode`  
+  **Environment variable:** `OKTA_CLIENT_AUTHORIZATIONMODE`
+
+  ```go
+  okta.WithAuthorizationMode("PrivateKey")
+  ```
+</ParamField>
+
+<ParamField path="WithScopes" type="[]string">
+  The OAuth 2.0 scopes to request when using `PrivateKey` or `JWT` authorization modes. Scopes determine which Okta API endpoints the access token can reach.
+
+  **YAML key:** `okta.client.scopes`  
+  **Environment variable:** `OKTA_CLIENT_SCOPES`
+
+  ```go
+  okta.WithScopes([]string{"okta.users.manage", "okta.groups.read"})
+  ```
+</ParamField>
+
+<ParamField path="WithPrivateKey" type="string">
+  The PEM-encoded RSA or ECDSA private key used to sign OAuth 2.0 client assertions. Accepts either a file path or the key contents directly. If a file path is provided and the file is readable, the SDK reads the file automatically.
+
+  **YAML key:** `okta.client.privateKey`  
+  **Environment variable:** `OKTA_CLIENT_PRIVATEKEY`
+
+  ```go
+  // Pass the key directly
+  okta.WithPrivateKey("-----BEGIN RSA PRIVATE KEY-----\n...")
+
+  // Or pass a file path
+  okta.WithPrivateKey("/run/secrets/okta-private-key.pem")
+  ```
+</ParamField>
+
+<ParamField path="WithPrivateKeyId" type="string">
+  The `kid` (key ID) of the JWK registered in your Okta service application. Required when the service application has more than one JWK registered.
+
+  **YAML key:** `okta.client.privateKeyId`  
+  **Environment variable:** `OKTA_CLIENT_PRIVATEKEYID`
+
+  ```go
+  okta.WithPrivateKeyId("my-key-id-1")
+  ```
+</ParamField>
+
+<ParamField path="WithPrivateKeySigner" type="jose.Signer">
+  Supplies a pre-built [`jose.Signer`](https://pkg.go.dev/github.com/go-jose/go-jose/v4#Signer) instead of having the SDK construct one from a raw PEM key. Use this option when you manage keys externally (for example, in a hardware security module).
+
+  ```go
+  import "github.com/go-jose/go-jose/v4"
+
+  signer, _ := jose.NewSigner(
+      jose.SigningKey{Algorithm: jose.RS256, Key: privateKey},
+      nil,
+  )
+  okta.WithPrivateKeySigner(signer)
+  ```
+</ParamField>
+
+---
+
+## Rate limit handling
+
+<ParamField path="WithRateLimitMaxRetries" type="int32" default="2">
+  Number of times to retry a request that receives a `429 Too Many Requests` response. Set to `0` to disable retries.
+
+  **YAML key:** `okta.client.rateLimit.maxRetries`  
+  **Environment variable:** `OKTA_CLIENT_RATE_LIMIT_MAX_RETRIES`
+
+  ```go
+  okta.WithRateLimitMaxRetries(4)
+  ```
+</ParamField>
+
+<ParamField path="WithRateLimitMaxBackOff" type="int64" default="30">
+  Maximum number of seconds to wait between retry attempts when backing off after a `429` response. The SDK uses the `X-Rate-Limit-Reset` header to calculate the actual backoff and will not exceed this value.
+
+  **YAML key:** `okta.client.rateLimit.maxBackoff`  
+  **Environment variable:** `OKTA_CLIENT_RATE_LIMIT_MAX_BACKOFF`
+
+  ```go
+  okta.WithRateLimitMaxBackOff(60)
+  ```
+</ParamField>
+
+<Note>
+  Setting both `WithRequestTimeout` and `WithRateLimitMaxRetries` to `0` disables all automatic retry behavior.
+</Note>
+
+---
+
+## Caching
+
+<ParamField path="WithCache" type="bool" default="true">
+  Enables or disables the in-memory response cache. When `true`, GET responses are cached according to `WithCacheTtl` and `WithCacheTti`. Set to `false` to always fetch fresh data from the Okta API.
+
+  <Note>
+    OAuth 2.0 access tokens are always cached regardless of this setting.
+  </Note>
+
+  **YAML key:** `okta.client.cache.enabled`  
+  **Environment variable:** `OKTA_CLIENT_CACHE_ENABLED`
+
+  ```go
+  okta.WithCache(false)
+  ```
+</ParamField>
+
+<ParamField path="WithCacheTtl" type="int32" default="300">
+  Time-to-live for cached responses, in seconds. After this period a cached entry is considered stale and the next request fetches a fresh copy.
+
+  **YAML key:** `okta.client.cache.defaultTtl`  
+  **Environment variable:** `OKTA_CLIENT_CACHE_DEFAULT_TTL`
+
+  ```go
+  okta.WithCacheTtl(600)
+  ```
+</ParamField>
+
+<ParamField path="WithCacheTti" type="int32" default="300">
+  Cache cleanup interval (time-to-idle), in seconds. The cache is scanned for expired entries at this interval.
+
+  **YAML key:** `okta.client.cache.defaultTti`  
+  **Environment variable:** `OKTA_CLIENT_CACHE_DEFAULT_TTI`
+
+  ```go
+  okta.WithCacheTti(600)
+  ```
+</ParamField>
+
+<ParamField path="WithCacheManager" type="cache.Cache">
+  Replaces the built-in in-memory cache with a custom implementation. The custom type must satisfy the `okta.Cache` interface. Use this to plug in a distributed cache (for example, Redis) in multi-instance deployments.
+
+  ```go
+  okta.WithCacheManager(myRedisCache)
+  ```
+</ParamField>
+
+---
+
+## Proxy
+
+<ParamField path="WithProxyHost" type="string">
+  Hostname of the HTTP proxy through which API requests should be routed.
+
+  **YAML key:** `okta.client.proxy.host`  
+  **Environment variable:** `OKTA_CLIENT_PROXY_HOST`
+
+  ```go
+  okta.WithProxyHost("proxy.internal.example.com")
+  ```
+</ParamField>
+
+<ParamField path="WithProxyPort" type="int32">
+  Port number of the HTTP proxy.
+
+  **YAML key:** `okta.client.proxy.port`  
+  **Environment variable:** `OKTA_CLIENT_PROXY_PORT`
+
+  ```go
+  okta.WithProxyPort(8080)
+  ```
+</ParamField>
+
+<ParamField path="WithProxyUsername" type="string">
+  Username for authenticating with the HTTP proxy.
+
+  **YAML key:** `okta.client.proxy.username`  
+  **Environment variable:** `OKTA_CLIENT_PROXY_USERNAME`
+
+  ```go
+  okta.WithProxyUsername("proxy-user")
+  ```
+</ParamField>
+
+<ParamField path="WithProxyPassword" type="string">
+  Password for authenticating with the HTTP proxy.
+
+  **YAML key:** `okta.client.proxy.password`  
+  **Environment variable:** `OKTA_CLIENT_PROXY_PASSWORD`
+
+  ```go
+  okta.WithProxyPassword("proxy-password")
+  ```
+</ParamField>
+
+---
+
+## User agent and debugging
+
+<ParamField path="WithUserAgentExtra" type="string" default='""'>
+  Additional string appended to the SDK's default `User-Agent` header. Use this to identify your application in Okta's System Log.
+
+  ```go
+  okta.WithUserAgentExtra("my-app/2.1.0")
+  ```
+</ParamField>
+
+<ParamField path="WithTestingDisableHttpsCheck" type="bool" default="false">
+  When `true`, the SDK skips TLS certificate verification. Set this only in test environments against local Okta emulators or mock servers. Never use in production.
+
+  **YAML key:** `okta.testing.disableHttpsCheck`  
+  **Environment variable:** `OKTA_TESTING_DISABLE_HTTPS_CHECK`
+
+  ```go
+  okta.WithTestingDisableHttpsCheck(true)
+  ```
+</ParamField>
+
+---
+
+## YAML configuration reference
+
+The full YAML structure for API Token authentication:
+
+```yaml
+okta:
+  client:
+    orgUrl: "https://{yourOktaDomain}"
+    token: "{apiToken}"
+    connectionTimeout: 60  # seconds
+    requestTimeout: 0      # seconds, 0 = no limit
+    rateLimit:
+      maxRetries: 2
+      maxBackoff: 30
+    cache:
+      enabled: true
+      defaultTtl: 300
+      defaultTti: 300
+    proxy:
+      host: null
+      port: null
+      username: null
+      password: null
+  testing:
+    disableHttpsCheck: false
+```
+
+For OAuth 2.0 with a Private Key:
+
+```yaml
+okta:
+  client:
+    orgUrl: "https://{yourOktaDomain}"
+    authorizationMode: "PrivateKey"
+    clientId: "{yourClientId}"
+    scopes:
+      - okta.users.manage
+      - okta.groups.read
+    privateKey: |
+      -----BEGIN RSA PRIVATE KEY-----
+      MIIEo...
+      -----END RSA PRIVATE KEY-----
+    privateKeyId: "{kid}"   # required if more than one JWK is registered
+    connectionTimeout: 60
+    requestTimeout: 0
+    rateLimit:
+      maxRetries: 4
+```
+
+The YAML file is read from `~/.okta/okta.yaml` (system-level) or `.okta.yaml` in the project root (application-level). Environment variables always override YAML values.
+
+---
+
+## Environment variable reference
+
+| Environment variable | Corresponding option |
+|----------------------|----------------------|
+| `OKTA_CLIENT_ORGURL` | `WithOrgUrl` |
+| `OKTA_CLIENT_TOKEN` | `WithToken` |
+| `OKTA_CLIENT_AUTHORIZATIONMODE` | `WithAuthorizationMode` |
+| `OKTA_CLIENT_SCOPES` | `WithScopes` |
+| `OKTA_CLIENT_PRIVATEKEY` | `WithPrivateKey` |
+| `OKTA_CLIENT_PRIVATEKEYID` | `WithPrivateKeyId` |
+| `OKTA_CLIENT_CONNECTION_TIMEOUT` | `WithConnectionTimeout` |
+| `OKTA_CLIENT_REQUEST_TIMEOUT` | `WithRequestTimeout` |
+| `OKTA_CLIENT_RATE_LIMIT_MAX_RETRIES` | `WithRateLimitMaxRetries` |
+| `OKTA_CLIENT_RATE_LIMIT_MAX_BACKOFF` | `WithRateLimitMaxBackOff` |
+| `OKTA_CLIENT_CACHE_ENABLED` | `WithCache` |
+| `OKTA_CLIENT_CACHE_DEFAULT_TTL` | `WithCacheTtl` |
+| `OKTA_CLIENT_CACHE_DEFAULT_TTI` | `WithCacheTti` |
+| `OKTA_CLIENT_PROXY_HOST` | `WithProxyHost` |
+| `OKTA_CLIENT_PROXY_PORT` | `WithProxyPort` |
+| `OKTA_CLIENT_PROXY_USERNAME` | `WithProxyUsername` |
+| `OKTA_CLIENT_PROXY_PASSWORD` | `WithProxyPassword` |
+| `OKTA_TESTING_DISABLE_HTTPS_CHECK` | `WithTestingDisableHttpsCheck` |

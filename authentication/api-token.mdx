@@ -1,0 +1,116 @@
+---
+title: "Authenticate with an Okta API token"
+description: "Use an SSWS API token to authenticate the Okta Go SDK. Generate a token in the Okta Admin Console and pass it using the WithToken() config setter."
+---
+
+An Okta API token (also called an SSWS token) is the simplest way to authenticate the SDK. You generate the token in the Okta Admin Console, and the SDK attaches it to every request as an `Authorization: SSWS <token>` header. This approach requires no OAuth setup and works immediately for server-side scripts, internal tools, and getting-started projects.
+
+## When to use an API token
+
+API tokens are appropriate for:
+
+- Quick prototypes and internal tooling
+- Server-side scripts that run in a trusted environment
+- Getting started before setting up OAuth 2.0
+
+API tokens are bound to the Okta user who created them. They inherit that user's permissions and are revoked if the user is deactivated. For production service-to-service integrations, consider [OAuth 2.0 with a private key pair](/authentication/oauth2-private-key) instead, which does not depend on a user account.
+
+## Generate an API token
+
+<Steps>
+  <Step title="Open the Okta Admin Console">
+    Sign in to your Okta organization and navigate to the Admin Console.
+  </Step>
+
+  <Step title="Go to Security > API">
+    In the left sidebar, click **Security**, then click **API**.
+  </Step>
+
+  <Step title="Open the Tokens tab">
+    Click the **Tokens** tab, then click **Create Token**.
+  </Step>
+
+  <Step title="Name and save the token">
+    Enter a descriptive name for the token (for example, `my-go-service`), then click **Create Token**. Copy the token value immediately — Okta displays it only once.
+  </Step>
+</Steps>
+
+<Warning>
+  Treat your API token like a password. Do not hardcode it in source files or commit it to version control. Use environment variables or a secrets manager instead.
+</Warning>
+
+## Initialize the client
+
+Pass your Okta domain and API token to `okta.NewConfiguration()` using `WithOrgUrl()` and `WithToken()`:
+
+```go
+import (
+	"fmt"
+	"context"
+	"github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+  config, err := okta.NewConfiguration(
+    okta.WithOrgUrl("https://{yourOktaDomain}"),
+    okta.WithToken("{apiToken}"),
+  )
+  if err != nil {
+    fmt.Printf("Error: %v\n", err)
+  }
+  client := okta.NewAPIClient(config)
+}
+```
+
+Replace `{yourOktaDomain}` with your Okta organization URL (for example, `https://dev-123456.okta.com`) and `{apiToken}` with the token you copied from the Admin Console.
+
+## Configure with environment variables
+
+Hard-coding credentials works for quick tests, but for real projects use environment variables. The SDK reads them automatically:
+
+```bash
+export OKTA_CLIENT_ORGURL="https://{yourOktaDomain}"
+export OKTA_CLIENT_TOKEN="{apiToken}"
+```
+
+With environment variables set, you can initialize the client without passing any credentials directly:
+
+```go
+config, err := okta.NewConfiguration()
+if err != nil {
+  fmt.Printf("Error: %v\n", err)
+}
+client := okta.NewAPIClient(config)
+```
+
+## Configure with a YAML file
+
+You can also store configuration in `~/.okta/okta.yaml` or `.okta.yaml` at the root of your project:
+
+```yaml
+okta:
+  client:
+    orgUrl: "https://{yourOktaDomain}"
+    token: "{apiToken}"
+```
+
+The SDK loads this file automatically on startup. Configuration passed to the constructor takes precedence over the YAML file.
+
+## Configuration setter reference
+
+| Setter | Description |
+|--------|-------------|
+| `WithOrgUrl(url string)` | Your Okta organization URL |
+| `WithToken(token string)` | The SSWS API token |
+
+## API token vs. OAuth 2.0
+
+| | API token | OAuth 2.0 private key |
+|---|---|---|
+| Setup complexity | Low | Higher |
+| Bound to a user | Yes | No |
+| Supports all endpoints | Yes | Limited to granted scopes |
+| Recommended for production | No | Yes |
+| Rotatable without user action | No | Yes |
+
+For service-to-service applications that run unattended, [OAuth 2.0 with a private key pair](/authentication/oauth2-private-key) is the preferred approach.

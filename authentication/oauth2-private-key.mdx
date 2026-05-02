@@ -1,0 +1,145 @@
+---
+title: "OAuth 2.0 with a private key pair"
+description: "Authenticate the Okta Go SDK using OAuth 2.0 with a public/private RSA key pair for service-to-service applications without API tokens."
+---
+
+OAuth 2.0 with a private key pair is the recommended authentication mode for automated, service-to-service applications. Instead of an API token tied to a user account, you register a public key with an Okta service application and use the corresponding private key to sign requests. The SDK exchanges a signed client assertion for a scoped access token automatically — you never manage tokens directly.
+
+## When to use this mode
+
+Use private key authentication when:
+
+- Your application runs unattended (pipelines, background jobs, daemons)
+- You want credentials that are not tied to any user account
+- You need to rotate keys without disrupting a user
+- You require fine-grained OAuth 2.0 scopes instead of full admin access
+
+<Note>
+  This mode is supported only for service-to-service applications. Key pairs can only manage [specific Okta endpoints](https://developer.okta.com/docs/guides/implement-oauth-for-okta/main/#scopes-and-supported-endpoints). To manage endpoints not covered by those scopes, use an API token belonging to a user with appropriate permissions.
+</Note>
+
+<Info>
+  OAuth 2.0 with private key authentication supports [DPoP (Demonstrating Proof of Possession)](https://developer.okta.com/docs/guides/dpop/main/) for enhanced token security.
+</Info>
+
+## Setup
+
+<Steps>
+  <Step title="Generate a public/private key pair">
+    Use [mkjwk](https://mkjwk.org/) to generate an RSA key pair in JWK format. If generating production keys, run `mkjwk` locally after auditing its code — never paste production secrets into an online tool.
+
+    Save the three output files:
+    - `public-key` — the public key only
+    - `public-private-keypair` — the full key pair
+    - `public-private-keypair-set` — the key set (JWKS format)
+  </Step>
+
+  <Step title="Convert the private key to PEM format">
+    Use [pem-jwk](https://www.npmjs.com/package/pem-jwk) to convert the JWK private key to PEM format. Audit `pem-jwk` before trusting it with production values.
+
+    ```bash
+    pem-jwk public-private-keypair > private.pem
+    ```
+  </Step>
+
+  <Step title="Format the PEM key as a one-liner">
+    When storing a PEM key in a JSON file or environment variable, join the lines with `\n` using `awk`:
+
+    ```bash
+    awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' private.pem
+    ```
+
+    The result is a single string with `\n` characters representing each newline. Store this value wherever your application reads credentials at runtime (for example, a JSON config file or a secrets manager).
+  </Step>
+
+  <Step title="Create a service application in Okta">
+    Follow the Okta guide [Create a service app and grant scopes](https://developer.okta.com/docs/guides/implement-oauth-for-okta-serviceapp/create-serviceapp-grantscopes/#create-a-service-app). When prompted for a public key, upload the `public-private-keypair-set` file.
+
+    Use the Okta Admin Console to grant the OAuth scopes your application needs. See the [scopes and supported endpoints reference](https://developer.okta.com/docs/guides/implement-oauth-for-okta/main/#scopes-and-supported-endpoints) for the full list.
+
+    Note the **Client ID** displayed on the service application page.
+  </Step>
+
+  <Step title="Initialize the SDK client">
+    Construct the client by passing `"PrivateKey"` as the authorization mode along with your client ID, scopes, and private key:
+
+    ```go
+    config, err := okta.NewConfiguration(
+      okta.WithOrgUrl("https://{yourOktaDomain}"),
+      okta.WithAuthorizationMode("PrivateKey"),
+      okta.WithClientId("{{clientId}}"),
+      okta.WithScopes(([]string{"okta.users.manage"})),
+      okta.WithPrivateKey({{PEM PRIVATE KEY BLOCK}}), //when pasting blocks, use backticks and remove all space at beginning of each line.
+      okta.WithPrivateKeyId("{{private key id}}"),    //needed if Okta service application has more then a single JWK registered
+    )
+    if err != nil {
+      fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+    ```
+
+    `WithPrivateKey()` accepts either the PEM string directly or a path to a `.pem` file on disk. The SDK automatically requests and caches an access token before making its first API call.
+  </Step>
+</Steps>
+
+## Full example: reading private key from a JSON config file
+
+The following pattern is common for pipeline scripts. Store credentials in a JSON file at runtime and read them before initializing the client:
+
+```go
+config, err := okta.NewConfiguration(
+  okta.WithOrgUrl("https://{yourOktaDomain}"),
+  okta.WithAuthorizationMode("PrivateKey"),
+  okta.WithClientId("{client_id}"),
+  okta.WithScopes([]string{"{scopes}"}),
+  okta.WithPrivateKey("{private_key}"),
+  okta.WithPrivateKeyId("{private key id}"), //needed if Okta service application has more then a single JWK registered
+)
+if err != nil {
+  fmt.Printf("Error: %v\n", err)
+}
+client := okta.NewAPIClient(config)
+```
+
+A JSON config file holding the one-liner PEM key looks like:
+
+```yaml
+{
+    "Oktadomain" : "yourorg.okta.com",
+    "clientId" : "yourclientid",
+    "privateKey" : "----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----"
+}
+```
+
+## YAML configuration
+
+You can also configure private key authentication in `~/.okta/okta.yaml`:
+
+```yaml
+okta:
+  client:
+    orgUrl: "https://{yourOktaDomain}"
+    authorizationMode: "PrivateKey"
+    clientId: "{yourClientId}"
+    scopes:
+      - scope.1
+      - scope.2
+    privateKey: |
+        -----BEGIN RSA PRIVATE KEY-----
+        MIIEogIBAAKCAQEAl4F5CrP6Wu2kKwH1Z+CNBdo0iteHhVRIXeHdeoqIB1iXvuv4
+        THQdM5PIlot6XmeV1KUKuzw2ewDeb5zcasA4QHPcSVh2+KzbttPQ+RUXCUAr5t+r
+        0r6gBc5Dy1IPjCFsqsPJXFwqe3RzUb...
+        -----END RSA PRIVATE KEY-----
+    privateKeyId: "{JWK key id (kid)}" # needed if Okta service application has more than a single JWK registered
+```
+
+## Configuration setter reference
+
+| Setter | Description |
+|--------|-------------|
+| `WithAuthorizationMode("PrivateKey")` | Enables OAuth 2.0 private key mode |
+| `WithClientId(clientId string)` | Client ID of the Okta service application |
+| `WithScopes(scopes []string)` | OAuth 2.0 scopes to request |
+| `WithPrivateKey(privateKey string)` | PEM private key string or path to a `.pem` file |
+| `WithPrivateKeyId(privateKeyId string)` | Key ID (`kid`) — required when the service app has multiple registered JWKs |
+| `WithPrivateKeySigner(signer jose.Signer)` | Custom signer implementing `jose.Signer`, for advanced key management |

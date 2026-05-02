@@ -1,0 +1,305 @@
+---
+title: "Manage Okta users with the Go SDK"
+description: "Create, read, update, deactivate, and delete Okta users using the Go SDK UserAPI. Covers profiles, credentials, filtering, and lifecycle."
+---
+
+The `UserAPI` is the primary interface for managing users in your Okta organization. It provides methods for retrieving users by ID or login, listing and filtering the full user roster, creating users with profiles and credentials, updating profile attributes, and advancing users through their lifecycle states—from activation to suspension to permanent deletion.
+
+## Get a user
+
+Retrieve a single user by their Okta user ID, login name, or email address. Pass the identifier as the second argument to `GetUser`.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    user, resp, err := client.UserAPI.GetUser(context.Background(), "{userId|login|email}").Execute()
+    if err != nil {
+        fmt.Printf("Error getting user: %v\n", err)
+    }
+    fmt.Printf("User: %+v\n Response: %+v\n\n", user, resp)
+}
+```
+
+You can substitute `me` for the ID to fetch the user linked to the current API token.
+
+## List all users
+
+`ListUsers` returns a paginated slice of all users in your org. Users with a `DEPROVISIONED` status are omitted by default—use a filter or search query to include them.
+
+```go
+users, resp, err := client.UserAPI.ListUsers(context.Background()).Execute()
+if err != nil {
+    fmt.Printf("Error listing users: %v\n", err)
+}
+for index, user := range users {
+    fmt.Printf("User %d: %+v\n", index, user)
+}
+```
+
+### Pagination
+
+When there are more results than the default page size, use `HasNextPage` and `Next` to walk through subsequent pages.
+
+```go
+users, resp, err := client.UserAPI.ListUsers(context.Background()).Execute()
+if resp.HasNextPage() {
+    var nextUserSet []okta.User
+    resp, err = resp.Next(&nextUserSet)
+}
+```
+
+## Filter and search users
+
+Chain `.Filter()` onto a `ListUsers` call to narrow results using Okta's expression language. Supported filter fields include `status`, `lastUpdated`, `id`, `profile.login`, `profile.email`, and more.
+
+```go
+users, resp, err := client.UserAPI.ListUsers(context.Background()).
+    Filter("status eq \"ACTIVE\"").
+    Execute()
+if err != nil {
+    fmt.Printf("Error filtering users: %v\n", err)
+}
+for index, user := range users {
+    fmt.Printf("User %d: %+v\n", index, user)
+}
+```
+
+<Note>
+The `search` parameter is sourced from an eventually consistent datastore and may not reflect the most recent changes. Use `filter` when you need up-to-date results.
+</Note>
+
+## Create a user
+
+Build a `CreateUserRequest` with a `UserProfile` and optional `UserCredentials`, then call `CreateUser(...).Body(req).Execute()`. Pass `.Activate(true)` to immediately activate the user and send an activation email.
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    password := &okta.PasswordCredential{
+        Value: "Abcd1234!",
+    }
+    userCredentials := &okta.UserCredentials{
+        Password: password,
+    }
+
+    profile := okta.UserProfile{}
+    profile["firstName"] = "Ben"
+    profile["lastName"] = "Solo"
+    profile["email"] = "ben-solo@example.com"
+    profile["login"] = "ben-solo@example.com"
+
+    createUserRequest := okta.CreateUserRequest{
+        Credentials: userCredentials,
+        Profile:     &profile,
+    }
+
+    user, resp, err := client.UserAPI.CreateUser(context.Background()).
+        Body(createUserRequest).
+        Activate(true).
+        Execute()
+    if err != nil {
+        fmt.Printf("Error creating user: %v\n", err)
+    }
+    fmt.Printf("User: %+v\n Response: %+v\n\n", user, resp)
+}
+```
+
+<Accordion title="UserProfile standard fields">
+
+`UserProfile` is a `map[string]interface{}`, which means you can set any field defined in your Okta profile schema. The following fields are present in every Okta org by default:
+
+| Field | Type | Required |
+|---|---|---|
+| `login` | string | Yes |
+| `email` | string | Yes |
+| `firstName` | string | Yes |
+| `lastName` | string | Yes |
+| `middleName` | string | No |
+| `honorificPrefix` | string | No |
+| `honorificSuffix` | string | No |
+| `title` | string | No |
+| `displayName` | string | No |
+| `nickName` | string | No |
+| `profileUrl` | string | No |
+| `primaryPhone` | string | No |
+| `mobilePhone` | string | No |
+| `streetAddress` | string | No |
+| `city` | string | No |
+| `state` | string | No |
+| `zipCode` | string | No |
+| `countryCode` | string | No |
+| `postalAddress` | string | No |
+| `preferredLanguage` | string | No |
+| `locale` | string | No |
+| `timezone` | string | No |
+| `userType` | string | No |
+| `employeeNumber` | string | No |
+| `costCenter` | string | No |
+| `organization` | string | No |
+| `division` | string | No |
+| `department` | string | No |
+| `managerId` | string | No |
+| `manager` | string | No |
+
+Custom attributes can be added in the Okta Admin Console profile editor and then read/written the same way as standard fields.
+
+</Accordion>
+
+## Update a user
+
+Fetch the existing user, copy its profile, make changes, then call `UpdateUser` with an `UpdateUserRequest`. Only the fields you include in the body are changed—this is a partial update (PATCH semantics).
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    userToUpdate, resp, err := client.UserAPI.GetUser(context.Background(), "{userId}").Execute()
+    if err != nil {
+        fmt.Printf("Error getting user: %v\n", err)
+    }
+    fmt.Printf("User to update: %+v\n Response: %+v\n\n", userToUpdate, resp)
+
+    newProfile := *userToUpdate.Profile
+    newProfile["nickName"] = "Kylo Ren"
+    updateUser := &okta.UpdateUserRequest{
+        Profile: &newProfile,
+    }
+
+    updatedUser, resp, err := client.UserAPI.UpdateUser(context.Background(), *userToUpdate.Id).
+        Body(updateUser).
+        Execute()
+    if err != nil {
+        fmt.Printf("Error updating user: %v\n", err)
+    }
+    fmt.Printf("Updated User: %+v\n Response: %+v\n\n", updatedUser, resp)
+}
+```
+
+## Lifecycle operations
+
+Users move through a set of statuses during their lifetime in Okta: `STAGED`, `PROVISIONED`, `ACTIVE`, `RECOVERY`, `LOCKED_OUT`, `PASSWORD_EXPIRED`, `SUSPENDED`, and `DEPROVISIONED`. The `UserLifecycleAPI` provides methods to drive these transitions.
+
+<CodeGroup>
+
+```go Deactivate
+// Deactivation moves the user to DEPROVISIONED status.
+// This is destructive: the user is removed from all app assignments.
+resp, err := client.UserLifecycleAPI.DeactivateUser(context.Background(), "{userId}").Execute()
+if err != nil {
+    fmt.Printf("Error deactivating user: %v\n", err)
+}
+```
+
+```go Suspend
+// Suspension blocks sign-in while preserving group and app assignments.
+resp, err := client.UserLifecycleAPI.SuspendUser(context.Background(), "{userId}").Execute()
+if err != nil {
+    fmt.Printf("Error suspending user: %v\n", err)
+}
+```
+
+```go Unsuspend
+// Unsuspend returns the user to ACTIVE status.
+resp, err := client.UserLifecycleAPI.UnsuspendUser(context.Background(), "{userId}").Execute()
+if err != nil {
+    fmt.Printf("Error unsuspending user: %v\n", err)
+}
+```
+
+```go Activate
+// Activates a user in STAGED or DEPROVISIONED status.
+// SendEmail(true) sends the activation email to the user.
+token, resp, err := client.UserLifecycleAPI.ActivateUser(context.Background(), "{userId}").
+    SendEmail(true).
+    Execute()
+if err != nil {
+    fmt.Printf("Error activating user: %v\n", err)
+}
+fmt.Printf("Activation token: %+v\n", token)
+```
+
+```go Unlock
+// Unlocks a user with LOCKED_OUT status.
+resp, err := client.UserLifecycleAPI.UnlockUser(context.Background(), "{userId}").Execute()
+if err != nil {
+    fmt.Printf("Error unlocking user: %v\n", err)
+}
+```
+
+</CodeGroup>
+
+## Delete a user
+
+Permanent deletion requires the user to have a `DEPROVISIONED` status. If you call `DeleteUser` on an active user, Okta first deactivates them—you must then call `DeleteUser` a second time to remove them permanently.
+
+<Warning>
+User deletion cannot be undone.
+</Warning>
+
+```go
+import (
+    "context"
+    "fmt"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    // First call deactivates an active user (moves to DEPROVISIONED).
+    // Second call permanently deletes a DEPROVISIONED user.
+    resp, err := client.UserAPI.DeleteUser(context.Background(), "{userId}").Execute()
+    if err != nil {
+        fmt.Printf("Error deleting user: %v\n", err)
+    }
+    fmt.Printf("Response: %+v\n\n", resp)
+}
+```

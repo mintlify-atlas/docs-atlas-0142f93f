@@ -1,0 +1,475 @@
+---
+title: "IdentityProviderAPI — Federated IdP management"
+description: "Reference for client.IdentityProviderAPI: create and manage SAML and OIDC identity providers, manage IdP keys, and link Okta users to IdPs."
+---
+
+The `IdentityProviderAPI`, `IdentityProviderUsersAPI`, and `IdentityProviderKeysAPI` interfaces let you configure federated identity providers (IdPs) in your Okta org. Use them to add SAML 2.0 and OIDC social IdPs, upload X.509 certificate credentials, and link existing Okta users to external IdP accounts. All methods follow the builder pattern: call the method, chain any optional parameters, then call `.Execute()`.
+
+## IdP types
+
+Okta's `IdentityProvider` model supports the following provider `type` values:
+
+| Type | Description |
+|------|-------------|
+| `SAML2` | SAML 2.0 identity provider |
+| `OIDC` | OpenID Connect identity provider (for custom OIDC IdPs and social providers) |
+| `X509` | Smart card / certificate-based authentication |
+| `AgentlessDSSO` | Agentless Desktop SSO |
+
+Social providers (Google, Facebook, LinkedIn, etc.) use `type: OIDC` with a specific `name` that identifies the vendor.
+
+---
+
+## IdentityProviderAPI
+
+### `ListIdentityProviders`
+
+```go
+func (a *IdentityProviderAPIService) ListIdentityProviders(ctx context.Context) ApiListIdentityProvidersRequest
+```
+
+Lists all identity provider integrations in the org with pagination. Supports filter expressions and text search.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context for deadlines, cancellation, and authentication.
+</ParamField>
+
+**Optional chained parameters:**
+
+<ParamField path=".Q(q string)" type="string">
+  Searches the `name` field for a case-insensitive match.
+</ParamField>
+
+<ParamField path=".Type(type_ string)" type="string">
+  Filters results by IdP type, for example `SAML2` or `OIDC`.
+</ParamField>
+
+<ParamField path=".Limit(limit int32)" type="int32">
+  Maximum number of results per page.
+</ParamField>
+
+<ParamField path=".After(after string)" type="string">
+  Cursor for the next page of results.
+</ParamField>
+
+<ResponseField name="[]IdentityProvider" type="slice" required>
+  A slice of identity provider objects.
+</ResponseField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+```go
+import (
+    "fmt"
+    "context"
+    "github.com/okta/okta-sdk-golang/v6/okta"
+)
+
+func main() {
+    config, err := okta.NewConfiguration(
+        okta.WithOrgUrl("https://{yourOktaDomain}"),
+        okta.WithToken("{apiToken}"),
+    )
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+    }
+    client := okta.NewAPIClient(config)
+
+    idps, resp, err := client.IdentityProviderAPI.
+        ListIdentityProviders(context.Background()).
+        Execute()
+    if err != nil {
+        fmt.Printf("Error listing IdPs: %v\n", err)
+    }
+    fmt.Printf("IdPs: %+v\n Response: %+v\n\n", idps, resp)
+}
+```
+
+---
+
+### `GetIdentityProvider`
+
+```go
+func (a *IdentityProviderAPIService) GetIdentityProvider(ctx context.Context, idpId string) ApiGetIdentityProviderRequest
+```
+
+Retrieves an identity provider integration by its ID.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="idpId" type="string" required>
+  The unique ID of the identity provider.
+</ParamField>
+
+<ResponseField name="*IdentityProvider" type="object" required>
+  The identity provider object including `type`, `name`, `status`, `protocol`, and `policy` settings.
+</ResponseField>
+
+```go
+idp, resp, err := client.IdentityProviderAPI.
+    GetIdentityProvider(context.Background(), "{idpId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error getting IdP: %v\n", err)
+}
+fmt.Printf("IdP: %+v\n Response: %+v\n\n", idp, resp)
+```
+
+---
+
+### `CreateIdentityProvider`
+
+```go
+func (a *IdentityProviderAPIService) CreateIdentityProvider(ctx context.Context) ApiCreateIdentityProviderRequest
+```
+
+Creates a new identity provider integration in your org.
+
+For SAML 2.0 IdPs, you must add the IdP's signature certificate to the IdP key store before creating the IdP with a `kid` credential reference. For Smart Card X.509 IdPs, upload the full trust chain as a single key.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".IdentityProvider(identityProvider IdentityProvider)" type="IdentityProvider" required>
+  The IdP configuration. Must include `type`, `name`, and protocol-specific `protocol` and `policy` settings.
+</ParamField>
+
+<ResponseField name="*IdentityProvider" type="object" required>
+  The created identity provider with its assigned `id`.
+</ResponseField>
+
+```go
+// Example: Create a SAML 2.0 IdP
+idp := okta.IdentityProvider{}
+idp.SetType("SAML2")
+idp.SetName("My SAML IdP")
+
+protocol := okta.IdentityProviderCredentials{}
+// ... configure protocol, endpoints, and policy ...
+
+created, resp, err := client.IdentityProviderAPI.
+    CreateIdentityProvider(context.Background()).
+    IdentityProvider(idp).
+    Execute()
+if err != nil {
+    fmt.Printf("Error creating IdP: %v\n", err)
+}
+fmt.Printf("Created IdP: %+v\n Response: %+v\n\n", created, resp)
+```
+
+---
+
+### `ReplaceIdentityProvider`
+
+```go
+func (a *IdentityProviderAPIService) ReplaceIdentityProvider(ctx context.Context, idpId string) ApiReplaceIdentityProviderRequest
+```
+
+Replaces the configuration of an identity provider. All required properties must be present in the request body.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="idpId" type="string" required>
+  The unique ID of the identity provider to replace.
+</ParamField>
+
+<ResponseField name="*IdentityProvider" type="object" required>
+  The updated identity provider.
+</ResponseField>
+
+---
+
+### `DeleteIdentityProvider`
+
+```go
+func (a *IdentityProviderAPIService) DeleteIdentityProvider(ctx context.Context, idpId string) ApiDeleteIdentityProviderRequest
+```
+
+Deletes an identity provider integration. All existing IdP users are unlinked, with the highest-priority profile source taking precedence. Unlinked users keep their existing authentication provider type (`FEDERATION` or `SOCIAL`).
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="idpId" type="string" required>
+  The unique ID of the identity provider to delete.
+</ParamField>
+
+<ResponseField name="*APIResponse" type="object" required>
+  HTTP response metadata.
+</ResponseField>
+
+<Warning>
+  Deleting an IdP unlinks all associated users. Ensure this is intentional before proceeding.
+</Warning>
+
+---
+
+### `ActivateIdentityProvider` / `DeactivateIdentityProvider`
+
+```go
+func (a *IdentityProviderAPIService) ActivateIdentityProvider(ctx context.Context, idpId string) ApiActivateIdentityProviderRequest
+func (a *IdentityProviderAPIService) DeactivateIdentityProvider(ctx context.Context, idpId string) ApiDeactivateIdentityProviderRequest
+```
+
+Activates or deactivates an identity provider. Both methods take `ctx context.Context` and `idpId string`, and return `*IdentityProvider`.
+
+```go
+activated, resp, err := client.IdentityProviderAPI.
+    ActivateIdentityProvider(context.Background(), "{idpId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error activating IdP: %v\n", err)
+}
+fmt.Printf("Activated IdP status: %s\n", activated.GetStatus())
+```
+
+---
+
+## IdentityProviderUsersAPI
+
+The `IdentityProviderUsersAPI` manages user links between Okta and an external IdP. Access it via `client.IdentityProviderUsersAPI`.
+
+### `ListIdentityProviderApplicationUsers`
+
+```go
+func (a *IdentityProviderUsersAPIService) ListIdentityProviderApplicationUsers(ctx context.Context, idpId string) ApiListIdentityProviderApplicationUsersRequest
+```
+
+Lists all Okta users linked to the specified identity provider.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="idpId" type="string" required>
+  The unique ID of the identity provider.
+</ParamField>
+
+**Optional chained parameters:**
+
+<ParamField path=".Q(q string)" type="string">
+  Searches user profiles for a match.
+</ParamField>
+
+<ParamField path=".Limit(limit int32)" type="int32">
+  Maximum number of results per page.
+</ParamField>
+
+<ParamField path=".After(after string)" type="string">
+  Cursor for the next page of results.
+</ParamField>
+
+<ResponseField name="[]IdentityProviderApplicationUser" type="slice" required>
+  A slice of IdP application user objects, each containing the Okta user ID and the external IdP subject.
+</ResponseField>
+
+```go
+users, resp, err := client.IdentityProviderUsersAPI.
+    ListIdentityProviderApplicationUsers(context.Background(), "{idpId}").
+    Execute()
+if err != nil {
+    fmt.Printf("Error listing IdP users: %v\n", err)
+}
+fmt.Printf("IdP users: %+v\n Response: %+v\n\n", users, resp)
+```
+
+---
+
+### `LinkUserToIdentityProvider`
+
+```go
+func (a *IdentityProviderUsersAPIService) LinkUserToIdentityProvider(ctx context.Context, idpId string, userId string) ApiLinkUserToIdentityProviderRequest
+```
+
+Links an existing Okta user to a SAML or social identity provider. For SAML IdPs, the IdP must have `honorPersistentNameId` set to `true`, and the incoming SAML assertion must use `urn:oasis:names:tc:SAML:2.0:nameid-format:persistent` as the Name Identifier Format.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ParamField path="idpId" type="string" required>
+  The unique ID of the identity provider.
+</ParamField>
+
+<ParamField path="userId" type="string" required>
+  The ID of the existing Okta user to link.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".UserIdentityProviderLinkRequest(body UserIdentityProviderLinkRequest)" type="UserIdentityProviderLinkRequest" required>
+  The link request containing the external subject identifier (`externalId`).
+</ParamField>
+
+<ResponseField name="*IdentityProviderApplicationUser" type="object" required>
+  The linked user record.
+</ResponseField>
+
+```go
+linkReq := okta.UserIdentityProviderLinkRequest{}
+linkReq.SetExternalId("external-user-id-from-idp")
+
+linked, resp, err := client.IdentityProviderUsersAPI.
+    LinkUserToIdentityProvider(context.Background(), "{idpId}", "{userId}").
+    UserIdentityProviderLinkRequest(linkReq).
+    Execute()
+if err != nil {
+    fmt.Printf("Error linking user: %v\n", err)
+}
+fmt.Printf("Linked user: %+v\n Response: %+v\n\n", linked, resp)
+```
+
+---
+
+### Other IdentityProviderUsersAPI methods
+
+<AccordionGroup>
+  <Accordion title="GetIdentityProviderApplicationUser">
+    ```go
+    GetIdentityProviderApplicationUser(ctx context.Context, idpId string, userId string) ApiGetIdentityProviderApplicationUserRequest
+    // Returns: *IdentityProviderApplicationUser
+    ```
+    Retrieves a single linked IdP user by ID.
+  </Accordion>
+
+  <Accordion title="UnlinkUserFromIdentityProvider">
+    ```go
+    UnlinkUserFromIdentityProvider(ctx context.Context, idpId string, userId string) ApiUnlinkUserFromIdentityProviderRequest
+    // Returns: *APIResponse
+    ```
+    Removes the link between an Okta user and an IdP. The Okta user account is not deleted.
+  </Accordion>
+
+  <Accordion title="ListSocialAuthTokens">
+    ```go
+    ListSocialAuthTokens(ctx context.Context, idpId string, userId string) ApiListSocialAuthTokensRequest
+    // Returns: []SocialAuthToken
+    ```
+    Lists the tokens minted by a social authentication provider when the user authenticated via Social Auth. Use this when your app needs user data not imported into Okta's profile.
+  </Accordion>
+
+  <Accordion title="ListUserIdentityProviders">
+    ```go
+    ListUserIdentityProviders(ctx context.Context, id string) ApiListUserIdentityProvidersRequest
+    // Returns: []IdentityProvider
+    ```
+    Lists all IdPs a specific Okta user is linked to.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## IdentityProviderKeysAPI
+
+The `IdentityProviderKeysAPI` manages the X.509 certificate key store used by IdPs. Before creating a SAML 2.0 IdP that references a signing certificate, you must upload that certificate here. Access it via `client.IdentityProviderKeysAPI`.
+
+<Note>
+  RSA-based certificates are supported for all IdP types. Okta supports EC-based certificates only for the `X509` IdP type (P-256, P-384, and P-521 curves only).
+</Note>
+
+### `ListIdentityProviderKeys`
+
+```go
+func (a *IdentityProviderKeysAPIService) ListIdentityProviderKeys(ctx context.Context) ApiListIdentityProviderKeysRequest
+```
+
+Lists all identity provider key credentials in the org's IdP key store.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+<ResponseField name="[]IdPKeyCredential" type="slice" required>
+  A slice of key credential objects, each containing the JWK representation of the certificate.
+</ResponseField>
+
+```go
+keys, resp, err := client.IdentityProviderKeysAPI.
+    ListIdentityProviderKeys(context.Background()).
+    Execute()
+if err != nil {
+    fmt.Printf("Error listing IdP keys: %v\n", err)
+}
+for _, key := range keys {
+    fmt.Printf("Key: kid=%s\n", key.GetKid())
+}
+fmt.Printf("Response: %+v\n", resp)
+```
+
+---
+
+### `CreateIdentityProviderKey`
+
+```go
+func (a *IdentityProviderKeysAPIService) CreateIdentityProviderKey(ctx context.Context) ApiCreateIdentityProviderKeyRequest
+```
+
+Creates a new X.509 certificate credential in the IdP key store.
+
+<ParamField path="ctx" type="context.Context" required>
+  Request context.
+</ParamField>
+
+**Required chained parameters:**
+
+<ParamField path=".JsonWebKey(jsonWebKey IdPCertificateCredential)" type="IdPCertificateCredential" required>
+  The X.509 certificate in JWK format. Must include the `x5c` (certificate chain) field.
+</ParamField>
+
+<ResponseField name="*IdPKeyCredential" type="object" required>
+  The stored key credential, including its assigned `kid`.
+</ResponseField>
+
+```go
+certCredential := okta.IdPCertificateCredential{}
+certCredential.SetX5c([]string{"{base64EncodedDerCertificate}"})
+
+key, resp, err := client.IdentityProviderKeysAPI.
+    CreateIdentityProviderKey(context.Background()).
+    JsonWebKey(certCredential).
+    Execute()
+if err != nil {
+    fmt.Printf("Error creating IdP key: %v\n", err)
+}
+fmt.Printf("Created key: kid=%s\n Response: %+v\n\n", key.GetKid(), resp)
+```
+
+---
+
+### Other IdentityProviderKeysAPI methods
+
+<AccordionGroup>
+  <Accordion title="GetIdentityProviderKey">
+    ```go
+    GetIdentityProviderKey(ctx context.Context, kid string) ApiGetIdentityProviderKeyRequest
+    // Returns: *IdPKeyCredential
+    ```
+    Retrieves a specific key credential by its `kid`.
+  </Accordion>
+
+  <Accordion title="ReplaceIdentityProviderKey">
+    ```go
+    ReplaceIdentityProviderKey(ctx context.Context, kid string) ApiReplaceIdentityProviderKeyRequest
+    // Returns: *IdPKeyCredential
+    ```
+    Replaces an existing key credential.
+  </Accordion>
+
+  <Accordion title="DeleteIdentityProviderKey">
+    ```go
+    DeleteIdentityProviderKey(ctx context.Context, kid string) ApiDeleteIdentityProviderKeyRequest
+    // Returns: *APIResponse
+    ```
+    Deletes a key credential. Only keys not currently referenced by an active or inactive IdP can be deleted.
+  </Accordion>
+</AccordionGroup>
